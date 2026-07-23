@@ -4,7 +4,7 @@ use crate::{auxiliary::dma::OamDma, cpu::CPU_CLOCK_SPEED};
 use serde::{Deserialize, Serialize};
 use web_time::Instant;
 
-const T_CYCLES_PER_M_CYCLE: usize = 4;
+pub const T_CYCLES_PER_M_CYCLE: usize = 4;
 const NANOS_PER_SECOND: u32 = 1_000_000_000;
 const T_CYCLE_DURATION_NANOS: f64 = NANOS_PER_SECOND as f64 / CPU_CLOCK_SPEED as f64;
 

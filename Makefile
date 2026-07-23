@@ -9,7 +9,7 @@ PORT ?= 8080
 WEB  := crates/web
 
 .DEFAULT_GOAL := help
-.PHONY: help serve web
+.PHONY: help serve web bench-ab
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -21,3 +21,6 @@ serve: ## Serve the web frontend at http://localhost:$(PORT)
 
 web: ## Build the WASM module + JS bindings into crates/web/pkg
 	./$(WEB)/build.sh
+
+bench-ab: ## Interleaved A/B bench matrix: make bench-ab A=<cli> [B=<cli>] [PAIRS=5]; games via OXGBC_BENCH_GB_ROM/OXGBC_BENCH_GBC_ROM
+	@A="$(A)" B="$(B)" PAIRS="$(or $(PAIRS),5)" ./scripts/bench-ab.sh
