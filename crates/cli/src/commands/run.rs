@@ -22,7 +22,15 @@ enum Mode {
     /// `--compare`: run the full timeout, then diff the framebuffer against a
     /// reference PNG.
     Compare { reference: PathBuf, tolerance: u8 },
+    /// `--state-trace`: emit an observable-state record per instruction,
+    /// bounded by an emulated M-cycle budget (not wall clock, so builds of
+    /// different speed stay comparable). The diff harness compares two builds'
+    /// streams; the first divergence names the instruction and register.
+    StateTrace { interval: u64, m_cycles: usize },
 }
+
+/// ~19 emulated seconds at single speed; the diff runner overrides per suite.
+const DEFAULT_STATE_TRACE_M_CYCLES: usize = 20_000_000;
 
 /// Everything `run` accepts, parsed and validated.
 struct RunOpts {
@@ -56,6 +64,10 @@ pub fn cmd_run(args: &[String]) -> Result<ExitCode, String> {
             reference,
             tolerance,
         } => run_compare(&mut cpu, &opts, reference, *tolerance),
+        Mode::StateTrace { interval, m_cycles } => {
+            state_trace(&mut cpu, *interval, *m_cycles);
+            true
+        }
     };
 
     inspect_after(&mut cpu, &opts)?;
@@ -77,6 +89,9 @@ fn parse(args: &[String]) -> Result<Option<RunOpts>, String> {
     let mut tolerance: u8 = 0;
     let mut trace_len: Option<usize> = None;
     let mut no_detect = false;
+    let mut state_trace = false;
+    let mut interval: u64 = 1;
+    let mut m_cycles: usize = DEFAULT_STATE_TRACE_M_CYCLES;
 
     let help = parse_args(args, &mut common, |arg, it| {
         match arg {
@@ -104,6 +119,25 @@ fn parse(args: &[String]) -> Result<Option<RunOpts>, String> {
                 trace_len = Some(n);
             }
             "--no-detect" => no_detect = true,
+            "--state-trace" => state_trace = true,
+            "--interval" => {
+                let v = next_val(it, "--interval")?;
+                interval = v
+                    .parse::<u64>()
+                    .map_err(|_| format!("invalid interval '{v}'"))?;
+                if interval == 0 {
+                    return Err("interval must be > 0".to_string());
+                }
+            }
+            "--m-cycles" => {
+                let v = next_val(it, "--m-cycles")?;
+                m_cycles = v
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid m-cycle budget '{v}'"))?;
+                if m_cycles == 0 {
+                    return Err("m-cycle budget must be > 0".to_string());
+                }
+            }
             other if other.starts_with('-') => return Err(format!("unknown flag '{other}'")),
             other if rom.is_none() => rom = Some(PathBuf::from(other)),
             other => return Err(format!("unexpected argument '{other}'")),
@@ -114,15 +148,21 @@ fn parse(args: &[String]) -> Result<Option<RunOpts>, String> {
         return Ok(None);
     }
 
-    let mode = match (compare, trace_len, no_detect) {
-        (Some(reference), None, false) => Mode::Compare {
+    let mode = match (compare, trace_len, no_detect, state_trace) {
+        (Some(reference), None, false, false) => Mode::Compare {
             reference,
             tolerance,
         },
-        (None, Some(len), false) => Mode::Trace(len),
-        (None, None, true) => Mode::NoDetect,
-        (None, None, false) => Mode::Detect,
-        _ => return Err("--compare, --trace and --no-detect are mutually exclusive".to_string()),
+        (None, Some(len), false, false) => Mode::Trace(len),
+        (None, None, true, false) => Mode::NoDetect,
+        (None, None, false, true) => Mode::StateTrace { interval, m_cycles },
+        (None, None, false, false) => Mode::Detect,
+        _ => {
+            return Err(
+                "--compare, --trace, --no-detect and --state-trace are mutually exclusive"
+                    .to_string(),
+            )
+        }
     };
 
     Ok(Some(RunOpts {
@@ -166,6 +206,100 @@ fn run_no_detect(cpu: &mut Cpu, opts: &RunOpts) -> bool {
     );
 
     true
+}
+
+/// `--state-trace`: step until the M-cycle budget is spent, emitting records:
+///
+/// - `S <m_cycles> <op> <pc> <af> <bc> <de> <hl> <sp> <ime> <if> <ie> <div>
+///   <tima> <tma> <tac> <lcdc> <stat> <ly> <nr52> <pcm12> <pcm34>` — one per
+///   `interval` instructions, all hex except m_cycles;
+/// - `F <frame> <hash>` — framebuffer hash at each frame boundary;
+/// - `A <hash>` — audio-buffer hash at each drain.
+///
+/// IO is read via `Bus::read` — exactly what the CPU observes here. Reads are
+/// side-effect-free and must stay so under the scheduler; the diff verifies it.
+fn state_trace(cpu: &mut Cpu, interval: u64, m_cycles: usize) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::with_capacity(1 << 20, stdout.lock());
+    let budget_end = cpu.clock.get_m_cycles() + m_cycles;
+    let mut last_frame = cpu.clock.bus.io.ppu.current_frame;
+    let mut instr: u64 = 0;
+
+    while cpu.clock.get_m_cycles() < budget_end {
+        cpu.step();
+        instr += 1;
+
+        let frame = cpu.clock.bus.io.ppu.current_frame;
+        if frame != last_frame {
+            last_frame = frame;
+            let fb: &[u8] = &cpu.clock.bus.io.ppu.lcd.buffer;
+            // a closed stdout (e.g. `| head`) just ends the trace
+            if writeln!(out, "F {frame} {:016x}", fnv1a(fb)).is_err() {
+                return;
+            }
+        }
+
+        if cpu.clock.bus.io.apu.buffer_ready() {
+            let mut hash = FNV_OFFSET;
+            for sample in cpu.clock.bus.io.apu.get_buffer() {
+                hash = fnv1a_step(hash, &sample.to_bits().to_le_bytes());
+            }
+            cpu.clock.bus.io.apu.clear_buffer();
+            if writeln!(out, "A {hash:016x}").is_err() {
+                return;
+            }
+        }
+
+        if instr % interval == 0 {
+            let ime = cpu.clock.bus.io.interrupts.ime as u8;
+            let op = cpu.step_ctx.opcode;
+            let r = &mut cpu.registers;
+            let (pc, af) = (r.pc, u16::from_be_bytes([r.a, r.flags.get_byte()]));
+            let bc = u16::from_be_bytes([r.b, r.c]);
+            let de = u16::from_be_bytes([r.d, r.e]);
+            let hl = u16::from_be_bytes([r.h, r.l]);
+            let sp = r.sp;
+            let bus = &cpu.clock.bus;
+            let io = |a: u16| bus.read(a);
+            let ok = writeln!(
+                out,
+                "S {} {op:02x} {pc:04x} {af:04x} {bc:04x} {de:04x} {hl:04x} {sp:04x} {ime:x} \
+                 {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                cpu.clock.get_m_cycles(),
+                io(0xFF0F), // IF
+                io(0xFFFF), // IE
+                io(0xFF04), // DIV
+                io(0xFF05), // TIMA
+                io(0xFF06), // TMA
+                io(0xFF07), // TAC
+                io(0xFF40), // LCDC
+                io(0xFF41), // STAT
+                io(0xFF44), // LY
+                io(0xFF26), // NR52
+                io(0xFF76), // PCM12
+                io(0xFF77), // PCM34
+            );
+            if ok.is_err() {
+                return;
+            }
+        }
+    }
+}
+
+const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+
+/// FNV-1a — tiny, dependency-free; only stream equality matters, not quality.
+fn fnv1a_step(mut hash: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    fnv1a_step(FNV_OFFSET, bytes)
 }
 
 /// `--compare`: run for the timeout, then diff the framebuffer against a
@@ -232,6 +366,10 @@ pub fn print_options() {
     eprintln!("                           repeatable, e.g. --vram 1:9C00:32)");
     eprintln!("  --ppu                    print PPU registers, window state, and OAM after the run");
     eprintln!("  --trace <N>              record the last N instructions (freezes on a hang)");
+    eprintln!("  --state-trace            emit observable-state records to stdout for the");
+    eprintln!("                           differential harness (scripts/state-diff.sh)");
+    eprintln!("  --interval <N>           state-trace: record every N instructions (default: 1)");
+    eprintln!("  --m-cycles <N>           state-trace: emulated M-cycle budget (default: 20M)");
     eprintln!("  --compare <PNG>          diff the final framebuffer against a reference PNG");
     eprintln!("  --tolerance <N>          per-channel diff allowed by --compare (default 0)\n");
 }
