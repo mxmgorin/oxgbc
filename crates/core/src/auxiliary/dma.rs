@@ -97,6 +97,16 @@ pub struct VramDma {
 }
 
 impl VramDma {
+    /// No transfer, no HBlank wait; the clock skips the
+    /// 2 MHz tick entirely. Leaving Idle takes an HDMA5 write (between
+    /// windows). `prev_ppu_mode` may go stale while skipped: harmless, since
+    /// `WaitingHBlank` is only entered with mode != HBlank and the first
+    /// waiting tick re-seeds it before a transition can be seen.
+    #[inline(always)]
+    pub fn is_idle(&self) -> bool {
+        self.state == VramDmaState::Idle
+    }
+
     pub fn is_transferring(&self) -> bool {
         matches!(
             self.state,

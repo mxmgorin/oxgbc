@@ -79,6 +79,23 @@ impl Clock {
                 .advance(div0, ticks, &mut self.bus.io.interrupts);
         }
 
+        self.m_cycles = self.m_cycles.wrapping_add(m_cycles);
+
+        // Both DMAs leave idle only via IO writes, which land between windows:
+        // a window starting with both idle stays DMA-free throughout, so their
+        // per-tick slots vanish from the hot path. Monomorphized so the idle
+        // loop carries no DMA residue.
+        if self.bus.oam_dma.is_active || !self.bus.vram_dma.is_idle() {
+            self.run_devices::<true>(ticks, div0);
+        } else {
+            self.run_devices::<false>(ticks, div0);
+        }
+    }
+
+    /// One window of the per-tick device pool (PPU/APU + the DMAs when `DMA`).
+    /// Still ticks per device tick; these leave the pool in later stages.
+    #[inline(always)]
+    fn run_devices<const DMA: bool>(&mut self, ticks: usize, div0: u16) {
         let double_speed = self.bus.io.cgb_speed.double_speed;
         // DIV-APU bit: 12 at normal speed, 13 in double. The timer already
         // advanced, so reconstruct the per-tick value from div0 (`+ i + 1`:
@@ -86,8 +103,7 @@ impl Clock {
         let div_apu_shift = if double_speed { 13 } else { 12 };
 
         for i in 0..ticks {
-            if i % T_CYCLES_PER_M_CYCLE == 0 {
-                self.m_cycles = self.m_cycles.wrapping_add(1);
+            if DMA && i % T_CYCLES_PER_M_CYCLE == 0 {
                 OamDma::tick(&mut self.bus);
             }
 
@@ -103,7 +119,7 @@ impl Clock {
 
             self.device_phase = !self.device_phase;
 
-            if self.device_phase && !self.cpu_halted {
+            if DMA && self.device_phase && !self.cpu_halted {
                 VramDma::tick(&mut self.bus);
             }
 
