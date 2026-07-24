@@ -59,50 +59,57 @@ impl Clock {
         self.time = Instant::now();
     }
 
+    /// Advance the whole system by `m_cycles`. Timer and serial batch-advance
+    /// over the window (skip edge-free spans, replay `tick()` at edges): legal
+    /// because nothing inside observes them — the CPU reads only between
+    /// windows, others see DIV via the closed-form `div0 + i`, IF OR-accumulates.
+    /// PPU/APU/DMA still tick per device (event-ized in later stages).
     #[inline(always)]
     pub fn tick_m_cycles(&mut self, m_cycles: usize) {
-        for _ in 0..m_cycles {
-            self.m_cycles = self.m_cycles.wrapping_add(1);
-            OamDma::tick(&mut self.bus);
+        let ticks = m_cycles * T_CYCLES_PER_M_CYCLE;
+        let div0 = self.bus.io.timer.raw_div();
 
-            for _ in 0..T_CYCLES_PER_M_CYCLE {
-                self.bus.io.timer.tick(&mut self.bus.io.interrupts);
-                // The serial edge detector only matters mid-transfer; its
-                // idle state is re-seeded on the SC write that starts one.
-                if self.bus.io.serial.is_active() {
-                    let sclk = self
-                        .bus
-                        .io
-                        .timer
-                        .serial_clock_bit(self.bus.io.serial.is_fast_clock());
-                    self.bus.io.serial.tick(sclk, &mut self.bus.io.interrupts);
-                }
+        self.bus.io.timer.advance(ticks, &mut self.bus.io.interrupts);
 
-                // PPU/APU/VRAM-DMA run on the fixed 4 MHz clock: every other
-                // CPU T-cycle in double speed, phase-continuous, so a 1
-                // M-cycle shift moves their observable phase by half a period.
-                if self.bus.io.cgb_speed.double_speed {
-                    self.ds_phase = !self.ds_phase;
+        // Serial edges only matter mid-transfer; idle is re-seeded on SC write.
+        if self.bus.io.serial.is_active() {
+            self.bus
+                .io
+                .serial
+                .advance(div0, ticks, &mut self.bus.io.interrupts);
+        }
 
-                    if self.ds_phase {
-                        continue;
-                    }
-                }
+        let double_speed = self.bus.io.cgb_speed.double_speed;
+        // DIV-APU bit: 12 at normal speed, 13 in double. The timer already
+        // advanced, so reconstruct the per-tick value from div0 (`+ i + 1`:
+        // the timer used to increment before the APU ran).
+        let div_apu_shift = if double_speed { 13 } else { 12 };
 
-                self.device_phase = !self.device_phase;
-
-                if self.device_phase && !self.cpu_halted {
-                    VramDma::tick(&mut self.bus);
-                }
-
-                self.bus.io.ppu.tick(&mut self.bus.io.interrupts);
-                let div_apu_bit = self
-                    .bus
-                    .io
-                    .timer
-                    .div_apu_bit(self.bus.io.cgb_speed.double_speed);
-                self.bus.io.apu.tick(div_apu_bit);
+        for i in 0..ticks {
+            if i % T_CYCLES_PER_M_CYCLE == 0 {
+                self.m_cycles = self.m_cycles.wrapping_add(1);
+                OamDma::tick(&mut self.bus);
             }
+
+            // PPU/APU/VRAM-DMA run on the fixed 4 MHz clock — every other CPU
+            // T-cycle in double speed, phase-continuous.
+            if double_speed {
+                self.ds_phase = !self.ds_phase;
+
+                if self.ds_phase {
+                    continue;
+                }
+            }
+
+            self.device_phase = !self.device_phase;
+
+            if self.device_phase && !self.cpu_halted {
+                VramDma::tick(&mut self.bus);
+            }
+
+            self.bus.io.ppu.tick(&mut self.bus.io.interrupts);
+            let div_apu_bit = div0.wrapping_add(i as u16 + 1) >> div_apu_shift & 1 != 0;
+            self.bus.io.apu.tick(div_apu_bit);
         }
     }
 

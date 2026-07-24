@@ -286,6 +286,35 @@ impl Serial {
         }
     }
 
+    /// Batch equivalent of `ticks × tick(bit_at(t), …)` for an active transfer.
+    /// The serial clock bit comes from the free-running DIV counter (`div0` =
+    /// its window-start value), so it only changes at mask crossings; ticks
+    /// between them are no-ops. Only the transition ticks are replayed through
+    /// the real `tick`, keeping edge semantics (mooneye boot_sclk_align) intact.
+    pub fn advance(&mut self, div0: u16, ticks: usize, interrupts: &mut Interrupts) {
+        let mask = if self.is_fast_clock() { 1u16 << 3 } else { 1u16 << 8 };
+        let period = mask as usize;
+
+        // A DIV write mid-transfer shifts the counter phase: the latch then
+        // disagrees with the bit level and the next tick sees an edge the phase
+        // math below would never place (a DIV reset clocks serial on hardware,
+        // like the TIMA DIV-write glitch). Replay that tick for real; if it
+        // coincides with a regular transition, the later loop call is a no-op.
+        if ticks > 0 && self.bits_left != 0 {
+            let bit1 = div0.wrapping_add(1) & mask != 0;
+            if self.prev_clock != bit1 {
+                self.tick(bit1, interrupts);
+            }
+        }
+
+        let mut offset = period - (div0 as usize & (period - 1));
+        while offset <= ticks && self.bits_left != 0 {
+            let bit = div0.wrapping_add(offset as u16) & mask != 0;
+            self.tick(bit, interrupts);
+            offset += period;
+        }
+    }
+
     #[inline(always)]
     pub fn has_data(&self) -> bool {
         self.output.is_some()
