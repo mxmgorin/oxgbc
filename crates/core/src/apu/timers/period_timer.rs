@@ -45,6 +45,22 @@ impl PeriodTimer {
         self.just_reloaded > 0
     }
 
+    /// Ticks (inclusive) until `tick` next returns true: an expired counter
+    /// fires on the very next tick, otherwise after `counter` of them.
+    #[inline(always)]
+    pub fn fire_in(&self) -> usize {
+        (self.counter as usize).max(1)
+    }
+
+    /// Batch equivalent of `n` fire-free ticks (`n < fire_in()`): the counter
+    /// just decrements and the reload window drains.
+    #[inline(always)]
+    pub fn skip(&mut self, n: usize) {
+        debug_assert!(n < self.fire_in());
+        self.counter -= n as u16;
+        self.just_reloaded = self.just_reloaded.saturating_sub(n.min(255) as u8);
+    }
+
     #[inline(always)]
     pub fn counter(&self) -> u16 {
         self.counter

@@ -81,10 +81,20 @@ impl Clock {
 
         self.m_cycles = self.m_cycles.wrapping_add(m_cycles);
 
-        // Both DMAs leave idle only via IO writes, which land between windows:
-        // a window starting with both idle stays DMA-free throughout, so their
-        // per-tick slots vanish from the hot path. Monomorphized so the idle
-        // loop carries no DMA residue.
+        // APU (stage 4): batch-advance the window. DIV-APU bits are a pure
+        // function of window-start DIV, it raises no IF, and NR52/PCM read
+        // between windows — nothing inside observes it.
+        let (dev_ticks, v_first, step, shift) = if self.bus.io.cgb_speed.double_speed {
+            // device ticks on every other master tick; ds_phase parity picks which
+            let offset: u16 = if self.ds_phase { 1 } else { 2 };
+            (ticks / 2, div0.wrapping_add(offset), 2, 13)
+        } else {
+            (ticks, div0.wrapping_add(1), 1, 12)
+        };
+        self.bus.io.apu.advance(dev_ticks, v_first, step, shift);
+
+        // Both DMAs leave idle only via IO write (between windows), so an
+        // all-idle window stays DMA-free. Monomorphized: no DMA residue.
         if self.bus.oam_dma.is_active || !self.bus.vram_dma.is_idle() {
             self.run_devices::<true>(ticks, div0);
         } else {
@@ -92,22 +102,18 @@ impl Clock {
         }
     }
 
-    /// One window of the per-tick device pool (PPU/APU + the DMAs when `DMA`).
+    /// One window of the per-tick device pool (PPU + the DMAs when `DMA`).
     /// Still ticks per device tick; these leave the pool in later stages.
     #[inline(always)]
-    fn run_devices<const DMA: bool>(&mut self, ticks: usize, div0: u16) {
+    fn run_devices<const DMA: bool>(&mut self, ticks: usize, _div0: u16) {
         let double_speed = self.bus.io.cgb_speed.double_speed;
-        // DIV-APU bit: 12 at normal speed, 13 in double. The timer already
-        // advanced, so reconstruct the per-tick value from div0 (`+ i + 1`:
-        // the timer used to increment before the APU ran).
-        let div_apu_shift = if double_speed { 13 } else { 12 };
 
         for i in 0..ticks {
             if DMA && i % T_CYCLES_PER_M_CYCLE == 0 {
                 OamDma::tick(&mut self.bus);
             }
 
-            // PPU/APU/VRAM-DMA run on the fixed 4 MHz clock — every other CPU
+            // PPU/VRAM-DMA run on the fixed 4 MHz clock — every other CPU
             // T-cycle in double speed, phase-continuous.
             if double_speed {
                 self.ds_phase = !self.ds_phase;
@@ -124,8 +130,6 @@ impl Clock {
             }
 
             self.bus.io.ppu.tick(&mut self.bus.io.interrupts);
-            let div_apu_bit = div0.wrapping_add(i as u16 + 1) >> div_apu_shift & 1 != 0;
-            self.bus.io.apu.tick(div_apu_bit);
         }
     }
 
