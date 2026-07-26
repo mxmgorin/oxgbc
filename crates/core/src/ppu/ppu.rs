@@ -107,6 +107,72 @@ impl Ppu {
         }
     }
 
+    /// Advance the PPU by `dots` device ticks in one call. In blank/OAM modes
+    /// the span to the next event (see `next_event_dot`) collapses to a
+    /// `line_ticks` bump, running `tick()` only at the event; mode 3 stays
+    /// per-dot (variable length). Caller must keep both DMAs idle (no
+    /// interleaving OAM/VRAM writes) or the clock falls back to per-tick.
+    pub fn advance(&mut self, dots: usize, interrupts: &mut Interrupts) {
+        if !self.lcd.control.is_lcd_enabled() {
+            // Frozen while the LCD is off, same early-out as tick().
+            return;
+        }
+
+        let mut remaining = dots;
+
+        while remaining > 0 {
+            if self.lcd.status.get_ppu_mode() == PpuMode::Transfer {
+                self.tick(interrupts);
+                remaining -= 1;
+                continue;
+            }
+
+            // `tick()` bumps line_ticks then acts, so the event fires on the
+            // tick that brings line_ticks to next_event_dot(); the dots before
+            // it just advance the counter.
+            let event = self.next_event_dot();
+            let to_event = event - self.line_ticks;
+
+            if to_event > remaining {
+                self.line_ticks += remaining;
+                return;
+            }
+
+            self.line_ticks = event - 1; // sit one dot before the event
+            remaining -= to_event;
+            self.tick(interrupts); // the tick that fires it
+        }
+    }
+
+    /// The next `line_ticks` value at which `tick` does anything in the
+    /// current non-transfer mode. Static per mode — compares only, no
+    /// divisions (the per-window cost must stay O(1)).
+    #[inline(always)]
+    fn next_event_dot(&self) -> usize {
+        match self.lcd.status.get_ppu_mode() {
+            // 76: OAM write-unblock + VRAM read prelock; 80: mode 3 entry.
+            PpuMode::Oam => {
+                if self.line_ticks < OAM_DOTS - 4 {
+                    OAM_DOTS - 4
+                } else {
+                    OAM_DOTS
+                }
+            }
+            // The LCD-enable line runs as mode 0 until its dot-80 mode 3
+            // entry; 452/456 are unreachable while the flag is set.
+            PpuMode::HBlank if self.lcdon_line0 => OAM_DOTS,
+            // 452: early LY increment; 456: LYC recompute + line wrap.
+            PpuMode::HBlank | PpuMode::VBlank => {
+                if self.line_ticks < TICKS_PER_LINE - 4 {
+                    TICKS_PER_LINE - 4
+                } else {
+                    TICKS_PER_LINE
+                }
+            }
+            PpuMode::Transfer => unreachable!("advance() ticks mode 3 per-dot, not scheduled"),
+        }
+    }
+
     /// LCD register write with PPU side effects (LCDC enable/disable, STAT and
     /// LYC writes re-evaluate the composite STAT line).
     pub fn write_lcd(&mut self, address: u16, value: u8, interrupts: &mut Interrupts) {

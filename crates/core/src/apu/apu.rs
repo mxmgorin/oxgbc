@@ -26,6 +26,11 @@ pub const SOUND_PLANNING_ADDRESS: u16 = 0xFF25;
 pub const MASTER_VOLUME_ADDRESS: u16 = 0xFF24;
 
 pub const FRAME_SEQUENCER_DIV: u16 = (CPU_CLOCK_SPEED / APU_CLOCK_SPEED as u32) as u16;
+/// Raw 16-bit DIV bit whose falling edge clocks the 512 Hz frame sequencer:
+/// one edge per `FRAME_SEQUENCER_DIV` counts (two bit periods), hence `- 1`.
+/// Double speed uses the next bit up. This is visible DIV bit 4 (DIV =
+/// raw >> 8), matching `sequence_frame`.
+pub const DIV_APU_BIT: u16 = FRAME_SEQUENCER_DIV.trailing_zeros() as u16 - 1;
 pub const SAMPLING_FREQUENCY: u32 = 44_100;
 /// Dynamic rate control may nudge the emission rate this far from nominal
 /// (~0.5%) — enough to absorb clock drift, too small to hear as a pitch shift.
@@ -244,9 +249,9 @@ impl Apu {
         );
     }
 
-    /// Batch equivalent of one `tick(bit)` per device tick over a window
-    /// (stage 4). `v_first` is the DIV value the first tick sees, `step` its
-    /// per-tick increment (2 in double speed), `shift` selects the DIV-APU bit.
+    /// Batch equivalent of one `tick(bit)` per device tick over a window.
+    /// `v_first` is the DIV value the first tick sees, `step` its per-tick
+    /// increment (2 in double speed), `shift` selects the DIV-APU bit.
     /// Spans between fires, DIV-APU edges and emissions collapse to counter
     /// arithmetic; anything stateful runs through the real `tick()` at its tick.
     pub fn advance(&mut self, device_ticks: usize, v_first: u16, step: u16, shift: u16) {
