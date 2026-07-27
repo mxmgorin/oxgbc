@@ -9,7 +9,7 @@ PORT ?= 8080
 WEB  := crates/web
 
 .DEFAULT_GOAL := help
-.PHONY: help serve web bench-ab
+.PHONY: help serve web bench-ab per-tick-cli
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -24,3 +24,7 @@ web: ## Build the WASM module + JS bindings into crates/web/pkg
 
 bench-ab: ## Interleaved A/B bench matrix: make bench-ab A=<cli> [B=<cli>] [PAIRS=5]; games via OXGBC_BENCH_GB_ROM/OXGBC_BENCH_GBC_ROM
 	@A="$(A)" B="$(B)" PAIRS="$(or $(PAIRS),5)" ./scripts/bench-ab.sh
+
+per-tick-cli: ## Build the reference oxgbc-cli (pre-scheduler per-tick chain) into target-per-tick/release
+	cargo build --release -p cli --features core/per-tick-clock --target-dir target-per-tick
+	@echo "reference binary: target-per-tick/release/oxgbc-cli"
