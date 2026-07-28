@@ -5,8 +5,10 @@ use crate::args::{next_val, parse_args, parse_dump, parse_vram, print_common_usa
 use crate::inspect::{dump_memory, dump_ppu, dump_regs, dump_vram, trace};
 use crate::report::{print_result_line, RomResult};
 use crate::rom::{compare_to_reference, save_screenshot};
+use core::apu::apu::SAMPLING_FREQUENCY;
 use core::cpu::Cpu;
 use core::harness;
+use core::ppu::ppu::TARGET_FPS_F;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -22,15 +24,22 @@ enum Mode {
     /// `--compare`: run the full timeout, then diff the framebuffer against a
     /// reference PNG.
     Compare { reference: PathBuf, tolerance: u8 },
-    /// `--state-trace`: emit an observable-state record per instruction,
-    /// bounded by an emulated M-cycle budget (not wall clock, so builds of
-    /// different speed stay comparable). The diff harness compares two builds'
-    /// streams; the first divergence names the instruction and register.
+    /// `--state-trace`: emit an observable-state record per executed
+    /// instruction, bounded by an emulated M-cycle budget (not wall clock, so
+    /// builds of different speed stay comparable). The diff harness compares
+    /// the streams; the first divergence names the instruction and register.
     StateTrace { interval: u64, m_cycles: usize },
 }
 
 /// ~19 emulated seconds at single speed; the diff runner overrides per suite.
 const DEFAULT_STATE_TRACE_M_CYCLES: usize = 20_000_000;
+
+/// `--state-trace` drains audio at frame flips, so the buffer holds a frame of
+/// interleaved stereo samples; the slack factor covers stretches that flip no
+/// frame at all (LCD off), where a full buffer would wrap and drop.
+const STATE_TRACE_AUDIO_BUFFER: usize =
+    (SAMPLING_FREQUENCY as f64 / TARGET_FPS_F) as usize * 2 * STATE_TRACE_AUDIO_SLACK;
+const STATE_TRACE_AUDIO_SLACK: usize = 32;
 
 /// Everything `run` accepts, parsed and validated.
 struct RunOpts {
@@ -212,12 +221,16 @@ fn run_no_detect(cpu: &mut Cpu, opts: &RunOpts) -> bool {
 ///
 /// - `S <m_cycles> <op> <pc> <af> <bc> <de> <hl> <sp> <ime> <if> <ie> <div>
 ///   <tima> <tma> <tac> <lcdc> <stat> <ly> <nr52> <pcm12> <pcm34>` — one per
-///   `interval` instructions, all hex except m_cycles;
+///   `interval` *executed* instructions, all hex except m_cycles;
 /// - `F <frame> <hash>` — framebuffer hash at each frame boundary;
-/// - `A <hash>` — audio-buffer hash at each drain.
+/// - `A <hash>` — audio hash of the samples since the previous `F`.
 ///
 /// IO is read via `Bus::read` — exactly what the CPU observes here. Reads are
 /// side-effect-free and must stay so under the scheduler; the diff verifies it.
+///
+/// Records are anchored to emulated-time events (executed instruction, frame
+/// flip), never to a bare `step()` call, so traces stay comparable between
+/// builds whose HALT step granularity differs.
 fn state_trace(cpu: &mut Cpu, interval: u64, m_cycles: usize) {
     use std::io::Write;
     let stdout = std::io::stdout();
@@ -226,9 +239,20 @@ fn state_trace(cpu: &mut Cpu, interval: u64, m_cycles: usize) {
     let mut last_frame = cpu.clock.bus.io.ppu.current_frame;
     let mut instr: u64 = 0;
 
+    // The app's default buffer is sized for its tighter drain cadence.
+    cpu.clock.bus.io.apu.config.buffer_size = STATE_TRACE_AUDIO_BUFFER;
+    cpu.clock.bus.io.apu.update_buffer_size();
+
     while cpu.clock.get_m_cycles() < budget_end {
+        let halted_before = cpu.clock.is_cpu_halted();
         cpu.step();
-        instr += 1;
+
+        // A step can cross the budget — by a few M-cycles for an instruction,
+        // by a whole jump for a halt wait. Drop its records so every build ends
+        // at the same emulated instant whatever its step granularity.
+        if cpu.clock.get_m_cycles() > budget_end {
+            return;
+        }
 
         let frame = cpu.clock.bus.io.ppu.current_frame;
         if frame != last_frame {
@@ -238,18 +262,25 @@ fn state_trace(cpu: &mut Cpu, interval: u64, m_cycles: usize) {
             if writeln!(out, "F {frame} {:016x}", fnv1a(fb)).is_err() {
                 return;
             }
+
+            let samples = cpu.clock.bus.io.apu.get_buffer();
+            if !samples.is_empty() {
+                let mut hash = FNV_OFFSET;
+                for sample in samples {
+                    hash = fnv1a_step(hash, &sample.to_bits().to_le_bytes());
+                }
+                cpu.clock.bus.io.apu.clear_buffer();
+                if writeln!(out, "A {hash:016x}").is_err() {
+                    return;
+                }
+            }
         }
 
-        if cpu.clock.bus.io.apu.buffer_ready() {
-            let mut hash = FNV_OFFSET;
-            for sample in cpu.clock.bus.io.apu.get_buffer() {
-                hash = fnv1a_step(hash, &sample.to_bits().to_le_bytes());
-            }
-            cpu.clock.bus.io.apu.clear_buffer();
-            if writeln!(out, "A {hash:016x}").is_err() {
-                return;
-            }
+        // A step that stays halted executed no instruction.
+        if halted_before && cpu.clock.is_cpu_halted() {
+            continue;
         }
+        instr += 1;
 
         if instr % interval == 0 {
             let ime = cpu.clock.bus.io.interrupts.ime as u8;
