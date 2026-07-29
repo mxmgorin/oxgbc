@@ -1,6 +1,6 @@
+use super::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
-use crate::menu::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::roms::RomsState;
 use crate::video::truncate_text;
 use crate::PlatformFileSystem;
@@ -165,8 +165,8 @@ impl SubMenu for RomsMenu {
 
 #[cfg(test)]
 mod tests {
-    use crate::menu::roms::{RomMenuItem, RomsMenu};
-    use crate::menu::SubMenu;
+    use crate::frontend::retro::menu::roms::{RomMenuItem, RomsMenu};
+    use crate::frontend::retro::menu::SubMenu;
     use crate::PlatformFileSystem;
     use std::path::Path;
 

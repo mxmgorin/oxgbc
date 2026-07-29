@@ -1,11 +1,11 @@
-use crate::cmd::{AppCmd, BindTarget, ChangeConfigCmd};
-use crate::config::{update_frame_skip, AppConfig, ScaleMode, VideoBackendType};
-use crate::menu::factory::{
+use super::factory::{
     advanced_menu, audio_menu, confirm_menu, files_menu, input_menu, interface_menu, keyboard_menu,
     keyboard_shortcuts_menu, loaded_roms_menu, opened_roms_menu, settings_menu, system_menu,
     video_menu, wait_input_menu,
 };
-use crate::menu::item::AppMenuItem;
+use super::item::AppMenuItem;
+use crate::cmd::{AppCmd, BindTarget, ChangeConfigCmd};
+use crate::config::{update_frame_skip, AppConfig, ScaleMode, VideoBackendType};
 use crate::roms::RomsState;
 use crate::video::frame_blend::{
     AdditiveFrameBlend, ExponentialFrameBlend, FrameBlendMode, GammaCorrectedFrameBlend,

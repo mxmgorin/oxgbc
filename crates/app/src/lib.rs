@@ -25,7 +25,6 @@ pub mod config;
 pub mod file_browser;
 pub mod frontend;
 pub mod input;
-pub mod menu;
 pub mod notification;
 pub mod palette;
 pub mod roms;

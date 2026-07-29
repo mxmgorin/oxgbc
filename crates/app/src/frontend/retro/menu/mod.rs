@@ -5,11 +5,11 @@ pub mod handler;
 pub mod item;
 pub mod roms;
 
+use self::buffer::MenuBuffer;
+use self::item::AppMenuItem;
 use crate::cmd::{AppCmd, BindInputCmd};
 use crate::config::AppConfig;
 use crate::input::bindings::BindableInput;
-use crate::menu::buffer::MenuBuffer;
-use crate::menu::item::AppMenuItem;
 use crate::roms::RomsState;
 use std::mem;
 

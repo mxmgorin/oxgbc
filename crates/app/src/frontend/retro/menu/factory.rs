@@ -1,9 +1,9 @@
+use super::files::FilesMenu;
+use super::item::AppMenuItem;
+use super::roms::RomsMenu;
+use super::SubMenu;
 use crate::cmd::{AppCmd, BindCmds, BindTarget, ChangeConfigCmd};
 use crate::config::{InterfaceConfig, VideoBackendType, VideoConfig};
-use crate::menu::files::FilesMenu;
-use crate::menu::item::AppMenuItem;
-use crate::menu::roms::RomsMenu;
-use crate::menu::SubMenu;
 use crate::roms::RomsState;
 use crate::video::frame_blend::FrameBlendMode;
 use crate::PlatformFileSystem;

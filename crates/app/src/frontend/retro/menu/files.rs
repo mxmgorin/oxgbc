@@ -1,7 +1,7 @@
+use super::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::file_browser::{FileBrowser, FILE_BROWSER_BACK_ITEM};
-use crate::menu::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::video::truncate_text;
 use std::path::Path;
 

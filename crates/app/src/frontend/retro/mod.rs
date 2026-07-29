@@ -2,15 +2,17 @@
 //! with the app's own bitmap font. Thin delegation to [`AppMenu`] — behavior is
 //! the menu's, unchanged.
 
+pub mod menu;
+
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::frontend::{Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
-use crate::menu::AppMenu;
 use crate::roms::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
 use core::ppu::framebuffer::FrameBuffer;
+use menu::AppMenu;
 use std::time::Duration;
 
 /// The menu redraws only on change, so idling between frames costs nothing.
