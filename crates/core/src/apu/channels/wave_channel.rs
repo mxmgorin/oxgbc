@@ -138,6 +138,18 @@ impl WaveChannel {
         false
     }
 
+    /// Ticks (inclusive) until the next wave step.
+    #[inline(always)]
+    pub fn fire_in(&self) -> usize {
+        self.period_timer.fire_in()
+    }
+
+    /// Batch equivalent of `n` step-free ticks (`n < fire_in()`).
+    #[inline(always)]
+    pub fn skip(&mut self, n: usize) {
+        self.period_timer.skip(n);
+    }
+
     #[inline]
     fn trigger(&mut self, master_ctrl: &mut NR52, len_first_half: bool) {
         let was_active = master_ctrl.is_ch3_on();

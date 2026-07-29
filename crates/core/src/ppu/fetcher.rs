@@ -3,7 +3,7 @@ use crate::ppu::fifo::PixelFifo;
 use crate::ppu::lcd::Lcd;
 use crate::ppu::sprites::SpriteFetcher;
 use crate::ppu::tile::{TileFlags, TileLineData, TILE_BITS_COUNT, TILE_HEIGHT, TILE_WIDTH};
-use crate::ppu::vram::VideoRam;
+use crate::ppu::vram::{VideoRam, VRAM_ADDR_START};
 use serde::{Deserialize, Serialize};
 
 type FetchFn = fn(&mut PixelFetcher, &Lcd, &VideoRam);
@@ -262,6 +262,13 @@ impl PixelFetcher {
             // tile map is olways in bank 0
             self.bgw_fetched_data.tile_index = vram.read_from_bank(0, tilemap_addr);
             self.bgw_fetched_data.map_addr = tilemap_addr;
+            self.bgw_fetched_data.area_8000 = lcdc.get_bgw_data_area() == 0x8000;
+        } else {
+            // BGW off on DMG: no tile is fetched, but fetch_step still reaches
+            // data1, whose LCDC.4 mid-fetch glitch may re-read map_addr. Keep it
+            // a valid VRAM address so the read can't underflow; the pixel is
+            // forced blank by get_bgw_color, so the value read is discarded.
+            self.bgw_fetched_data.map_addr = VRAM_ADDR_START;
             self.bgw_fetched_data.area_8000 = lcdc.get_bgw_data_area() == 0x8000;
         }
 

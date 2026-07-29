@@ -15,6 +15,10 @@ apu-trace = []
 # self dev-dependency below so `cargo test --release` works, with zero cost
 # in production builds
 test-bus = []
+# the pre-scheduler per-T-cycle device chain as the window strategy: the
+# reference implementation for A/B benches and whole-chain equivalence
+# (state-diff between a plain and a per-tick build must be zero)
+per-tick-clock = []
 
 [dependencies]
 serde_json = "1.0.*"

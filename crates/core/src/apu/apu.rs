@@ -26,6 +26,11 @@ pub const SOUND_PLANNING_ADDRESS: u16 = 0xFF25;
 pub const MASTER_VOLUME_ADDRESS: u16 = 0xFF24;
 
 pub const FRAME_SEQUENCER_DIV: u16 = (CPU_CLOCK_SPEED / APU_CLOCK_SPEED as u32) as u16;
+/// Raw 16-bit DIV bit whose falling edge clocks the 512 Hz frame sequencer:
+/// one edge per `FRAME_SEQUENCER_DIV` counts (two bit periods), hence `- 1`.
+/// Double speed uses the next bit up. This is visible DIV bit 4 (DIV =
+/// raw >> 8), matching `sequence_frame`.
+pub const DIV_APU_BIT: u16 = FRAME_SEQUENCER_DIV.trailing_zeros() as u16 - 1;
 pub const SAMPLING_FREQUENCY: u32 = 44_100;
 /// Dynamic rate control may nudge the emission rate this far from nominal
 /// (~0.5%) — enough to absorb clock drift, too small to hear as a pitch shift.
@@ -121,6 +126,11 @@ pub struct Apu {
     #[serde(default)]
     lf_ticks: u32,
     ticks_count: u32,
+    /// Ticks ahead provably free of channel fires and sample emissions, so a
+    /// window skips in O(1). DIV-APU edges excluded (re-checked per window).
+    /// 0 = recompute. Derived, rebuilt lazily, out of the savestate.
+    #[serde(skip)]
+    event_horizon: u32,
     /// Fractional phase of the output-sample clock: gains `sample_rate` per
     /// 4 MHz tick, emits a sample and wraps at `CPU_CLOCK_SPEED`. Emission is
     /// thus exactly `sample_rate` Hz of emulated time — no truncation drift
@@ -197,6 +207,7 @@ impl Apu {
             skip_div_event: SkipDivEvent::None,
             lf_ticks: 0,
             ticks_count: 0,
+            event_horizon: 0,
             sample_acc: 0,
             sample_rate: SAMPLING_FREQUENCY,
             window_left: 0.0,
@@ -231,10 +242,147 @@ impl Apu {
     /// cast to u32 is 0, which would silence the APU forever).
     #[inline(always)]
     pub fn set_sample_rate(&mut self, rate: u32) {
+        self.event_horizon = 0; // the emission horizon depends on the rate
         self.sample_rate = rate.clamp(
             SAMPLING_FREQUENCY - MAX_SAMPLE_RATE_SKEW,
             SAMPLING_FREQUENCY + MAX_SAMPLE_RATE_SKEW,
         );
+    }
+
+    /// Batch equivalent of one `tick(bit)` per device tick over a window.
+    /// `v_first` is the DIV value the first tick sees, `step` its per-tick
+    /// increment (2 in double speed), `shift` selects the DIV-APU bit.
+    /// Spans between fires, DIV-APU edges and emissions collapse to counter
+    /// arithmetic; anything stateful runs through the real `tick()` at its tick.
+    pub fn advance(&mut self, device_ticks: usize, v_first: u16, step: u16, shift: u16) {
+        // The trace counts individual ticks; keep it exact.
+        #[cfg(feature = "apu-trace")]
+        {
+            for j in 0..device_ticks {
+                let v = v_first.wrapping_add(step.wrapping_mul(j as u16));
+                self.tick(v >> shift & 1 != 0);
+            }
+        }
+
+        #[cfg(not(feature = "apu-trace"))]
+        {
+            // Fast path: whole window with nothing due. The horizon is cached;
+            // the DIV-APU edge is not — `v_first` is fresh each window, so the
+            // shift check below also catches DIV writes moving the bit phase.
+            let bit_first = v_first >> shift & 1 != 0;
+            let cold = self.nr52.byte as u32 | (self.config.channel_mask as u32) << 8;
+
+            if self.event_horizon as usize >= device_ticks
+                && !self.mix_dirty
+                && cold == self.mix_cold
+                && self.prev_div_apu_bit == bit_first
+                && !self.ch1.sweep_pipeline_live()
+            {
+                let boundary = 1u32 << shift;
+                let into = v_first as u32 & (boundary - 1);
+                // edge-free iff the last tick's value stays below the boundary
+                let edge_free =
+                    into + (device_ticks as u32 - 1) * step as u32 + 1 <= boundary;
+
+                if edge_free {
+                    self.skip_ticks(device_ticks);
+                    self.event_horizon -= device_ticks as u32;
+                    return;
+                }
+            }
+
+            self.advance_slow(device_ticks, v_first, step, shift);
+        }
+    }
+
+    /// Uncommon window: something due, dirty or in flight. Real `tick()`s at
+    /// events, O(1) skips between, leaves a fresh horizon for the fast path.
+    #[cfg(not(feature = "apu-trace"))]
+    fn advance_slow(&mut self, device_ticks: usize, v_first: u16, step: u16, shift: u16) {
+        let mut remaining = device_ticks;
+        // counter value observed by the immediately-next tick
+        let mut v_next = v_first;
+        let boundary = 1u32 << shift;
+
+        while remaining > 0 {
+            let bit_next = v_next >> shift & 1 != 0;
+            let cold = self.nr52.byte as u32 | (self.config.channel_mask as u32) << 8;
+
+            // stateful-in-flight → execute the real tick
+            if self.mix_dirty
+                || cold != self.mix_cold
+                || self.prev_div_apu_bit != bit_next
+                || self.ch1.sweep_pipeline_live()
+            {
+                self.tick(bit_next);
+                v_next = v_next.wrapping_add(step);
+                remaining -= 1;
+                continue;
+            }
+
+            // ticks until the next possible event (inclusive)
+            let to_edge = {
+                let into = v_next as u32 & (boundary - 1);
+                ((boundary - into) as usize).div_ceil(step as usize) + 1
+            };
+            let span = remaining.min(to_edge).min(self.fire_or_emit_in());
+
+            if span <= 1 {
+                self.tick(bit_next);
+                v_next = v_next.wrapping_add(step);
+                remaining -= 1;
+                continue;
+            }
+
+            // consume span-1 provably event-free ticks in O(1)
+            let n = span - 1;
+            self.skip_ticks(n);
+            v_next = v_next.wrapping_add(step.wrapping_mul(n as u16));
+            remaining -= n;
+        }
+
+        // hand the fast path a fresh horizon (edges are its own problem)
+        self.event_horizon = if self.mix_dirty || self.ch1.sweep_pipeline_live() {
+            0
+        } else {
+            (self.fire_or_emit_in() - 1) as u32
+        };
+    }
+
+    /// Ticks (inclusive) until the earliest channel fire or sample emission.
+    #[cfg(not(feature = "apu-trace"))]
+    #[inline(always)]
+    fn fire_or_emit_in(&self) -> usize {
+        let mut k = (CPU_CLOCK_SPEED - self.sample_acc).div_ceil(self.sample_rate) as usize;
+        if self.nr52.is_ch1_on() {
+            k = k.min(self.ch1.fire_in());
+        }
+        if self.nr52.is_ch2_on() {
+            k = k.min(self.ch2.fire_in());
+        }
+        if self.nr52.is_ch3_on() {
+            k = k.min(self.ch3.fire_in());
+        }
+        k.min(self.ch4.fire_in())
+    }
+
+    /// Batch equivalent of `n` provably event-free device ticks.
+    #[cfg(not(feature = "apu-trace"))]
+    #[inline(always)]
+    fn skip_ticks(&mut self, n: usize) {
+        self.lf_ticks = self.lf_ticks.wrapping_add(n as u32);
+        if self.nr52.is_ch1_on() {
+            self.ch1.skip(n);
+        }
+        if self.nr52.is_ch2_on() {
+            self.ch2.skip(n);
+        }
+        if self.nr52.is_ch3_on() {
+            self.ch3.skip(n);
+        }
+        self.ch4.skip(n);
+        self.run_ticks += n as u32;
+        self.sample_acc += n as u32 * self.sample_rate;
     }
 
     #[inline(always)]

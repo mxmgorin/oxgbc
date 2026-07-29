@@ -233,6 +233,10 @@ pub struct Serial {
 }
 
 const SERIAL_SC_UNUSED_MASK: u8 = 0b01111110;
+/// DIV bits the serial clock divides from: bit 8 (8192 Hz), bit 3 on the CGB
+/// fast clock (262144 Hz).
+const SERIAL_CLOCK_DIV_MASK: u16 = 1 << 8;
+const SERIAL_FAST_CLOCK_DIV_MASK: u16 = 1 << 3;
 
 impl Serial {
     /// Write SC ($FF02). Starting a transfer requires the transfer bit (7) and
@@ -256,10 +260,42 @@ impl Serial {
         self.bits_left != 0
     }
 
+    /// T-cycles until the transfer-complete IF, assuming no writes land in
+    /// between — the HALT fast-forward bound (writes can't happen: the CPU
+    /// is halted). `usize::MAX` when idle. `div` is the current counter.
+    pub fn if_horizon(&self, div: u16) -> usize {
+        if self.bits_left == 0 {
+            return usize::MAX;
+        }
+
+        let mask = self.clock_mask();
+
+        // a stale latch (DIV written mid-transfer) can shift a bit on the
+        // very next tick — don't reason past it (never live at a halt
+        // boundary, but cheap to honor)
+        if self.prev_clock != (div & mask != 0) {
+            return 1;
+        }
+
+        // bits shift on falling edges: counter crossings of 2×mask multiples
+        let period = (mask as usize) << 1;
+        let to_edge = period - (div as usize & (period - 1));
+        to_edge + (self.bits_left as usize - 1) * period
+    }
+
     /// The CGB fast clock (SC bit 1) is selected for the active transfer.
     #[inline(always)]
     pub fn is_fast_clock(&self) -> bool {
         self.sc & 0x02 != 0
+    }
+
+    #[inline(always)]
+    fn clock_mask(&self) -> u16 {
+        if self.is_fast_clock() {
+            SERIAL_FAST_CLOCK_DIV_MASK
+        } else {
+            SERIAL_CLOCK_DIV_MASK
+        }
     }
 
     /// Advance one T-cycle. The serial clock is divided from the same
@@ -283,6 +319,35 @@ impl Serial {
         if self.bits_left == 0 {
             self.sc &= 0x7F;
             interrupts.request_interrupt(InterruptType::Serial);
+        }
+    }
+
+    /// Batch equivalent of `ticks × tick(bit_at(t), …)` for an active transfer.
+    /// The serial clock bit comes from the free-running DIV counter (`div0` =
+    /// its window-start value), so it only changes at mask crossings; ticks
+    /// between them are no-ops. Only the transition ticks are replayed through
+    /// the real `tick`, keeping edge semantics (mooneye boot_sclk_align) intact.
+    pub fn advance(&mut self, div0: u16, ticks: usize, interrupts: &mut Interrupts) {
+        let mask = self.clock_mask();
+        let period = mask as usize;
+
+        // A DIV write mid-transfer shifts the counter phase: the latch then
+        // disagrees with the bit level and the next tick sees an edge the phase
+        // math below would never place (a DIV reset clocks serial on hardware,
+        // like the TIMA DIV-write glitch). Replay that tick for real; if it
+        // coincides with a regular transition, the later loop call is a no-op.
+        if ticks > 0 && self.bits_left != 0 {
+            let bit1 = div0.wrapping_add(1) & mask != 0;
+            if self.prev_clock != bit1 {
+                self.tick(bit1, interrupts);
+            }
+        }
+
+        let mut offset = period - (div0 as usize & (period - 1));
+        while offset <= ticks && self.bits_left != 0 {
+            let bit = div0.wrapping_add(offset as u16) & mask != 0;
+            self.tick(bit, interrupts);
+            offset += period;
         }
     }
 

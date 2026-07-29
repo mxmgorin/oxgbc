@@ -278,6 +278,24 @@ impl SquareChannel {
             .tick(master_ctrl, &mut self.nrx3x4_period_and_ctrl.nrx4);
     }
 
+    /// The sweep pipeline (CH1 only) has work in flight on its 1/2 MHz grids.
+    #[inline(always)]
+    pub fn sweep_pipeline_live(&self) -> bool {
+        self.sweep_timer.as_ref().is_some_and(|s| s.is_live())
+    }
+
+    /// Ticks (inclusive) until the next duty step.
+    #[inline(always)]
+    pub fn fire_in(&self) -> usize {
+        self.period_timer.fire_in()
+    }
+
+    /// Batch equivalent of `n` step-free ticks (`n < fire_in()`).
+    #[inline(always)]
+    pub fn skip(&mut self, n: usize) {
+        self.period_timer.skip(n);
+    }
+
     /// Returns whether the duty stepped — the only point where this tick can
     /// change the channel's digital output.
     #[inline]

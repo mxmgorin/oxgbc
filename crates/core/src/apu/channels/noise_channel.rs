@@ -222,6 +222,37 @@ impl NoiseChannel {
         false
     }
 
+    /// Ticks (inclusive) until the counter next steps (`usize::MAX` while
+    /// fully inactive — the countdown is frozen then).
+    #[inline(always)]
+    pub fn fire_in(&self) -> usize {
+        if !(self.counter_active || self.background_active) {
+            return usize::MAX;
+        }
+
+        if self.counter_countdown == 0 {
+            self.divisor_ticks() as usize
+        } else {
+            self.counter_countdown as usize
+        }
+    }
+
+    /// Batch equivalent of `n` step-free ticks (`1 <= n < fire_in()`): the
+    /// lazily-reloaded countdown just drains.
+    #[inline(always)]
+    pub fn skip(&mut self, n: usize) {
+        if !(self.counter_active || self.background_active) {
+            return;
+        }
+
+        if self.counter_countdown == 0 {
+            self.counter_countdown = self.divisor_ticks();
+        }
+
+        self.counter_countdown -= n as u16;
+        self.countdown_reloaded = false;
+    }
+
     /// T-cycles between counter increments: `divisor * 8`, or 4 for the 0
     /// divisor code.
     #[inline(always)]

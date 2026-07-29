@@ -44,6 +44,17 @@ pub struct SweepTimer {
 }
 
 impl SweepTimer {
+    /// Work in flight on the 1/2 MHz grids: a scheduled recalc, its reload
+    /// delay, the restart hold, or an instant calc awaiting its overflow
+    /// check. The batch APU advance falls back to per-tick while this holds.
+    #[inline(always)]
+    pub fn is_live(&self) -> bool {
+        self.calculate_countdown != 0
+            || self.reload_timer != 0
+            || self.restart_hold != 0
+            || self.instant_calculation_done
+    }
+
     /// 1 MHz pipeline tick.
     pub fn tick_1mhz(&mut self, nr52: &mut NR52, nrx3x4: &NRx3x4) {
         if self.reload_timer > 0 {
