@@ -9,7 +9,10 @@ name = "main"
 crate-type = ["cdylib"]
 
 [dependencies]
-app = { path = "../app", default-features = false, features = ["file-dialog"] }
+app = { path = "../app", default-features = false, features = [
+    "frontend-retro",
+    "file-dialog",
+] }
 jni = "0.22"
 log = "0.4.27"
 android_logger = "0.15.1"

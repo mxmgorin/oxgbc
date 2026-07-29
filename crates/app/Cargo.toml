@@ -5,7 +5,9 @@ edition = "2021"
 authors = ["troidem <mxmgorin@gmail.com>"]
 
 [features]
-default = ["file-dialog", "file-browser"]
+default = ["frontend-retro", "file-dialog", "file-browser"]
+# Exactly one frontend per build; an egui one joins `frontend-retro` later.
+frontend-retro = []
 file-dialog = []
 file-browser = []
 sdl2-bundled = ["sdl2/bundled"]

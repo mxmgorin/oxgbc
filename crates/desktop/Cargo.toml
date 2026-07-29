@@ -5,7 +5,8 @@ edition = "2021"
 authors = ["troidem <mxmgorin@gmail.com>"]
 
 [features]
-default = ["file-dialog", "file-browser"]
+default = ["frontend-retro", "file-dialog", "file-browser"]
+frontend-retro = ["app/frontend-retro"]
 file-dialog = ["tinyfiledialogs", "app/file-dialog"]
 file-browser = ["app/file-browser"]
 sdl2-bundled = ["app/sdl2-bundled"]

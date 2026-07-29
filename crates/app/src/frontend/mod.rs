@@ -4,6 +4,7 @@
 //!
 //! Stays free of any UI toolkit: only `AppCmd`, config and platform types.
 
+#[cfg(feature = "frontend-retro")]
 pub mod retro;
 
 use crate::cmd::AppCmd;
@@ -15,6 +16,7 @@ use crate::PlatformFileSystem;
 use core::ppu::framebuffer::FrameBuffer;
 use std::time::Duration;
 
+#[cfg(feature = "frontend-retro")]
 pub type ActiveFrontend = retro::RetroFrontend;
 
 /// Directional intent from any bound input, already resolved from joypad

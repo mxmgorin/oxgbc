@@ -35,7 +35,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release --no-default-features --features "file-browser sdl2-bundled" -p desktop
+          cargo build --release --no-default-features --features "frontend-retro file-browser sdl2-bundled" -p desktop
 
       - name: Prepare release
         run: |
@@ -88,7 +88,7 @@ jobs:
           RUSTFLAGS: "-C linker=arm-linux-gnueabihf-gcc"
           PKG_CONFIG_ALLOW_CROSS: "1"
         run: |
-          cargo build --release --no-default-features --features "file-browser sdl2-bundled" \
+          cargo build --release --no-default-features --features "frontend-retro file-browser sdl2-bundled" \
             --target=armv7-unknown-linux-gnueabihf -p desktop
 
       - name: Prepare release
