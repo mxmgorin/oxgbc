@@ -149,3 +149,43 @@ fn test_serial_advance_div_reset_mid_transfer() {
         }
     }
 }
+
+/// `if_horizon` must point at the exact tick whose falling edge ships the
+/// last bit and raises the Serial IF — swept across counter phases for both
+/// clock speeds and every in-flight bit count.
+#[test]
+fn test_serial_if_horizon_exact() {
+    for fast in [false, true] {
+        let sc = if fast { 0x83u8 } else { 0x81 };
+        let mask = if fast { 1u16 << 3 } else { 1 << 8 };
+        for div0 in (0u16..0x400).step_by(3) {
+            let mut s = Serial::default();
+            s.write_sc(sc, div0 & mask != 0);
+            // walk a few edges in so bits_left varies across cases too
+            let mut i = Interrupts::default();
+            let pre = (div0 as usize % 5) * mask as usize;
+            for j in 1..=pre {
+                s.tick(div0.wrapping_add(j as u16) & mask != 0, &mut i);
+            }
+            if !s.is_active() || i.int_flags != 0 {
+                continue;
+            }
+            let div = div0.wrapping_add(pre as u16);
+
+            let h = s.if_horizon(div);
+            assert_ne!(h, usize::MAX);
+            for tick in 1..=h {
+                s.tick(div.wrapping_add(tick as u16) & mask != 0, &mut i);
+                let fired = i.int_flags & 0b1000 != 0;
+                assert_eq!(
+                    fired,
+                    tick == h,
+                    "IF at tick {tick}, horizon {h} (div0={div0:#06x} fast={fast} pre={pre})"
+                );
+            }
+        }
+    }
+
+    // idle serial never fires
+    assert_eq!(Serial::default().if_horizon(0x1234), usize::MAX);
+}

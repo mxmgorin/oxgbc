@@ -8,6 +8,14 @@
 use crate::apu::DIV_APU_BIT;
 use crate::auxiliary::clock::{Clock, T_CYCLES_PER_M_CYCLE};
 use crate::auxiliary::dma::{OamDma, VramDma};
+#[cfg(not(feature = "per-tick-clock"))]
+use crate::cpu::interrupts::InterruptType;
+
+/// Upper bound on one HALT jump, in T-cycles: keeps the CPU stepping at a sane
+/// cadence when no IF-capable event is on the horizon at all (LCD off + timer
+/// off), so external inputs and frame pacing still get their step boundaries.
+#[cfg(not(feature = "per-tick-clock"))]
+const HALT_HORIZON_CAP: usize = 256 * T_CYCLES_PER_M_CYCLE;
 
 /// One batched window: devices skip edge-free spans and replay `tick()` only
 /// at their edges. Legal because nothing inside a window observes them — the
@@ -93,6 +101,53 @@ fn run_devices(clock: &mut Clock, ticks: usize) {
 
         clock.bus.io.ppu.tick(&mut clock.bus.io.interrupts);
     }
+}
+
+/// M-cycles a halted CPU can jump without missing a wake-up: the minimum over
+/// the IF-capable device horizons, filtered by IE — a disabled interrupt's
+/// event still happens inside the window (the devices replay it), it just
+/// can't wake the CPU, so the jump need not stop there. IE is stable while
+/// halted (only the CPU writes it). Rounding up to the wake event's M-cycle
+/// reproduces the per-M-cycle wait bit-for-bit. Joypad is injected between
+/// steps and needs no horizon; the APU raises no IF.
+#[cfg(not(feature = "per-tick-clock"))]
+pub fn halt_horizon(clock: &Clock) -> usize {
+    // DMA-active windows replay per-dot; keep them at today's cadence
+    // (GDMA also parks the CPU through `is_cpu_halted`).
+    if clock.bus.oam_dma.is_active || !clock.bus.vram_dma.is_idle() {
+        return 1;
+    }
+
+    let io = &clock.bus.io;
+    let ie = io.interrupts.ie;
+    let mut t = HALT_HORIZON_CAP;
+
+    if ie & InterruptType::Timer as u8 != 0 {
+        t = t.min(io.timer.if_horizon());
+    }
+
+    if ie & InterruptType::Serial as u8 != 0 {
+        t = t.min(io.serial.if_horizon(io.timer.raw_div()));
+    }
+
+    if ie & (InterruptType::VBlank as u8 | InterruptType::LCDStat as u8) != 0 {
+        // dots are 4 MHz device ticks: 1 T-cycle at normal speed, 2 in
+        // double speed. ×2 may overshoot the event by one T-cycle when
+        // the dot grid sits between M-cycles, but never past the event's
+        // M-cycle boundary (an odd true offset is never a multiple of 4).
+        let dots = io.ppu.dots_to_next_event();
+        let factor = 1 + io.cgb_speed.double_speed as usize;
+        t = t.min(dots.saturating_mul(factor));
+    }
+
+    // stop exactly on the wake event's M-cycle
+    t.div_ceil(T_CYCLES_PER_M_CYCLE).max(1)
+}
+
+/// The reference chain keeps the per-M-cycle halt wait.
+#[cfg(feature = "per-tick-clock")]
+pub fn halt_horizon(_clock: &Clock) -> usize {
+    1
 }
 
 /// The original per-T-cycle chain (order: OamDma, Timer, Serial, VramDma,

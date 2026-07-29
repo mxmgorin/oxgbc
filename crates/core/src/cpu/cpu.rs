@@ -111,8 +111,12 @@ impl Cpu {
                 // The CPU continues execution after the HALT, but the byte after it is read twice in a row (PC is not incremented).
                 self.clock.cpu_halted = false;
             } else {
-                // Do nothing, just wait for an interrupt to wake up
-                self.clock.tick_m_cycles(1);
+                // Wait for an interrupt by jumping to the next event whose
+                // interrupt is enabled instead of idling one M-cycle at a
+                // time; the horizon ends the window on that event's exact
+                // M-cycle, so dispatch timing is unchanged.
+                let jump = crate::auxiliary::scheduler::halt_horizon(&self.clock);
+                self.clock.tick_m_cycles(jump);
                 return;
             }
         }

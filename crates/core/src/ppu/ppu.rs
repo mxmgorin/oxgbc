@@ -144,6 +144,22 @@ impl Ppu {
         }
     }
 
+    /// Dots until the next dot at which `tick` can change any observable
+    /// state, IF bits included — the HALT fast-forward bound. Mode 3
+    /// discovers its HBlank transition (a STAT edge source) per dot; a
+    /// disabled LCD never wakes anyone.
+    #[inline(always)]
+    pub fn dots_to_next_event(&self) -> usize {
+        if !self.lcd.control.is_lcd_enabled() {
+            return usize::MAX;
+        }
+
+        match self.lcd.status.get_ppu_mode() {
+            PpuMode::Transfer => 1,
+            _ => self.next_event_dot() - self.line_ticks,
+        }
+    }
+
     /// The next `line_ticks` value at which `tick` does anything in the
     /// current non-transfer mode. Static per mode — compares only, no
     /// divisions (the per-window cost must stay O(1)).

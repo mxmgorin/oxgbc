@@ -233,6 +233,10 @@ pub struct Serial {
 }
 
 const SERIAL_SC_UNUSED_MASK: u8 = 0b01111110;
+/// DIV bits the serial clock divides from: bit 8 (8192 Hz), bit 3 on the CGB
+/// fast clock (262144 Hz).
+const SERIAL_CLOCK_DIV_MASK: u16 = 1 << 8;
+const SERIAL_FAST_CLOCK_DIV_MASK: u16 = 1 << 3;
 
 impl Serial {
     /// Write SC ($FF02). Starting a transfer requires the transfer bit (7) and
@@ -256,10 +260,42 @@ impl Serial {
         self.bits_left != 0
     }
 
+    /// T-cycles until the transfer-complete IF, assuming no writes land in
+    /// between — the HALT fast-forward bound (writes can't happen: the CPU
+    /// is halted). `usize::MAX` when idle. `div` is the current counter.
+    pub fn if_horizon(&self, div: u16) -> usize {
+        if self.bits_left == 0 {
+            return usize::MAX;
+        }
+
+        let mask = self.clock_mask();
+
+        // a stale latch (DIV written mid-transfer) can shift a bit on the
+        // very next tick — don't reason past it (never live at a halt
+        // boundary, but cheap to honor)
+        if self.prev_clock != (div & mask != 0) {
+            return 1;
+        }
+
+        // bits shift on falling edges: counter crossings of 2×mask multiples
+        let period = (mask as usize) << 1;
+        let to_edge = period - (div as usize & (period - 1));
+        to_edge + (self.bits_left as usize - 1) * period
+    }
+
     /// The CGB fast clock (SC bit 1) is selected for the active transfer.
     #[inline(always)]
     pub fn is_fast_clock(&self) -> bool {
         self.sc & 0x02 != 0
+    }
+
+    #[inline(always)]
+    fn clock_mask(&self) -> u16 {
+        if self.is_fast_clock() {
+            SERIAL_FAST_CLOCK_DIV_MASK
+        } else {
+            SERIAL_CLOCK_DIV_MASK
+        }
     }
 
     /// Advance one T-cycle. The serial clock is divided from the same
@@ -292,7 +328,7 @@ impl Serial {
     /// between them are no-ops. Only the transition ticks are replayed through
     /// the real `tick`, keeping edge semantics (mooneye boot_sclk_align) intact.
     pub fn advance(&mut self, div0: u16, ticks: usize, interrupts: &mut Interrupts) {
-        let mask = if self.is_fast_clock() { 1u16 << 3 } else { 1u16 << 8 };
+        let mask = self.clock_mask();
         let period = mask as usize;
 
         // A DIV write mid-transfer shifts the counter phase: the latch then

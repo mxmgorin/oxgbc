@@ -187,6 +187,33 @@ impl Timer {
         }
     }
 
+    /// T-cycles until the tick that raises the Timer IF bit, assuming no
+    /// register writes land in between — the HALT fast-forward bound
+    /// (writes can't happen: the CPU is halted). `usize::MAX` when no
+    /// overflow is on the way. Compares and shifts only.
+    pub fn if_horizon(&self) -> usize {
+        // a pending write glitch resolves on the next real tick — don't
+        // reason past it (never set at a halt boundary, but cheap to honor)
+        if self.dirty || self.disabling_glitch {
+            return 1;
+        }
+
+        // reload pipeline in flight: IF fires on the tick that sees the
+        // counter at the delay value
+        if let Some(k) = self.tima_overflow_ticks {
+            return TIMA_RELOAD_DELAY_TICKS - k + 1;
+        }
+
+        if !self.is_enabled() {
+            return usize::MAX;
+        }
+
+        // increments until TIMA wraps, then the reload delay
+        let period = (TAC_CLOCK_MASKS[(self.tac & 0b11) as usize] as usize) << 1;
+        let increments = 0x100 - self.tima as usize;
+        self.next_falling_edge_offset() + (increments - 1) * period + TIMA_RELOAD_DELAY_TICKS + 1
+    }
+
     #[inline]
     pub fn tick(&mut self, interrupts: &mut Interrupts) {
         // TIMA overflowed during the last cycle
@@ -433,6 +460,87 @@ mod tests {
             assert_eq!(a.tima, 6, "glitch must increment tima (tac={tac:#05b})");
             assert_eq!(a.tima, b.tima, "tac={tac:#05b}");
             assert_eq!(a.div, b.div, "tac={tac:#05b}");
+        }
+    }
+
+    /// `if_horizon` must point at the exact tick that raises the Timer IF:
+    /// every enabled TAC over a counter sweep with TIMA near the overflow
+    /// (bounded walk), the full TIMA range on the fastest clock, and a
+    /// mid-pipeline state — all verified against the per-tick chain.
+    #[test]
+    fn test_if_horizon_exact() {
+        let assert_fires_at = |mut t: Timer, ctx: &str| {
+            let h = t.if_horizon();
+            assert_ne!(h, usize::MAX, "enabled timer always overflows ({ctx})");
+            let mut i = Interrupts::default();
+            for tick in 1..=h {
+                t.tick(&mut i);
+                let fired = i.int_flags & 0b100 != 0;
+                assert_eq!(fired, tick == h, "IF at tick {tick}, horizon {h} ({ctx})");
+            }
+        };
+
+        // every clock select, counter phases across the slowest period
+        for tac in [0b100u8, 0b101, 0b110, 0b111] {
+            for div_step in 0..64u16 {
+                let div = div_step.wrapping_mul(641); // spread over the u16 domain
+                for tima in [0xFEu8, 0xFF] {
+                    let mut t = Timer {
+                        div,
+                        tac,
+                        tima,
+                        tma: 0x42,
+                        ..Timer::default()
+                    };
+                    t.falling_edge_detector.prev_result = super::detector_input(div, tac);
+                    assert_fires_at(
+                        t,
+                        &format!("div={div:#06x} tac={tac:#05b} tima={tima:#04x}"),
+                    );
+                }
+            }
+        }
+
+        // full TIMA range on the fastest clock (period 16)
+        for tima in 0u8..=0xFF {
+            let mut t = Timer {
+                div: 0x1234,
+                tac: 0b101,
+                tima,
+                tma: 0x42,
+                ..Timer::default()
+            };
+            t.falling_edge_detector.prev_result = super::detector_input(t.div, t.tac);
+            assert_fires_at(t, &format!("tima={tima:#04x}"));
+        }
+
+        // disabled timer without a pipeline never fires
+        let t = Timer {
+            tac: 0b010,
+            ..Timer::default()
+        };
+        assert_eq!(t.if_horizon(), usize::MAX);
+
+        // mid-pipeline: horizon counts down through the reload delay
+        let mut t = Timer {
+            tac: 0b101,
+            tima: 0xFF,
+            ..Timer::default()
+        };
+        t.falling_edge_detector.prev_result = super::detector_input(t.div, t.tac);
+        let mut i = Interrupts::default();
+        // walk to the overflow edge so the pipeline is live
+        while t.tima_overflow_ticks.is_none() {
+            t.tick(&mut i);
+        }
+        let h = t.if_horizon();
+        for tick in 1..=h {
+            t.tick(&mut i);
+            assert_eq!(
+                i.int_flags & 0b100 != 0,
+                tick == h,
+                "pipeline tick {tick} of {h}"
+            );
         }
     }
 
