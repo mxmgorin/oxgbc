@@ -1,6 +1,7 @@
 use crate::app::{App, AppState};
 use crate::cmd::{AppCmd, ChangeConfigCmd};
 use crate::config::AppConfig;
+use crate::frontend::Frontend;
 use crate::input::bindings::InputKind;
 use crate::input::emu::handle_emu_btn;
 use crate::input::gamepad::GamepadHandler;
@@ -64,7 +65,7 @@ impl InputHandler {
                 Event::KeyDown {
                     scancode: Some(sc), ..
                 } => {
-                    if let Some(cmd) = app.menu.handle_input(sc, true) {
+                    if let Some(cmd) = app.frontend.capture_bind(sc, true) {
                         self.handle_cmd(app, emu, cmd);
                     } else {
                         if let Some(cmd) = handle_key(&app.config.input, sc, true) {
@@ -145,7 +146,7 @@ impl InputHandler {
                     app.state = AppState::Running;
                 } else {
                     app.state = AppState::Paused;
-                    app.menu.request_update();
+                    app.frontend.request_update();
                 }
             }
             AppCmd::RestartRom => {
@@ -291,7 +292,7 @@ impl InputHandler {
                         "Save Slot: {}, Load Slot: {}",
                         app.config.current_save_slot, app.config.current_load_slot
                     ));
-                    app.menu.request_update();
+                    app.frontend.request_update();
                 }
                 ChangeConfigCmd::DecSaveAndLoadSlots => {
                     app.config.dec_load_slot();
@@ -300,7 +301,7 @@ impl InputHandler {
                         "Save Slot: {}, Load Slot: {}",
                         app.config.current_save_slot, app.config.current_load_slot
                     ));
-                    app.menu.request_update();
+                    app.frontend.request_update();
                 }
                 ChangeConfigCmd::NextShader => app.next_shader(),
                 ChangeConfigCmd::PrevShader => app.prev_shader(),

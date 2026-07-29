@@ -2,8 +2,8 @@ use crate::audio::AppAudio;
 use crate::battery::BatterySave;
 use crate::config::{AppConfig, VideoBackendType};
 
+use crate::frontend::{ActiveFrontend, Frontend};
 use crate::input::handler::InputHandler;
-use crate::menu::AppMenu;
 use crate::notification::Notifications;
 use crate::palette::LcdPalette;
 use crate::roms::RomsState;
@@ -47,7 +47,7 @@ where
     pub video: AppVideo,
     pub state: AppState,
     pub config: AppConfig,
-    pub menu: AppMenu,
+    pub frontend: ActiveFrontend,
     pub notifications: Notifications,
     pub platform: AppPlatform<FS, FD>,
     pub roms: RomsState,
@@ -110,7 +110,7 @@ where
 
         Ok(Self {
             audio: AppAudio::new(sdl, &config.audio),
-            menu: AppMenu::new(&roms),
+            frontend: ActiveFrontend::new(&roms),
             state: AppState::Paused,
             fps_str: ArrayString::<10>::new(),
             video,
@@ -193,11 +193,12 @@ where
     pub fn render_menu(&mut self, emu: &mut Emu) {
         emu.runtime.cpu.clock.reset();
         let fb = emu.get_framebuffer();
-        self.draw_menu(fb);
+        self.frontend
+            .render(&mut self.video, fb, &self.config, &self.roms);
         self.update_notif(fb);
         self.video.render();
 
-        thread::sleep(Duration::from_millis(30));
+        thread::sleep(self.frontend.frame_delay());
     }
 
     #[inline(always)]
@@ -206,7 +207,7 @@ where
         self.video.ui.fill_notif(fb, lines);
 
         if updated {
-            self.menu.request_update();
+            self.frontend.request_update();
         }
     }
 
@@ -228,19 +229,6 @@ where
         self.notifications.add(msg);
 
         Ok(())
-    }
-
-    #[inline(always)]
-    fn draw_menu(&mut self, fb: &mut FrameBuffer) -> bool {
-        let (items, updated) = self.menu.get_items(&self.config, &self.roms);
-
-        if updated {
-            self.video.ui.fill_menu(fb, items, true, true);
-        }
-
-        self.video.draw_menu(fb);
-
-        updated
     }
 
     pub fn next_palette(&mut self, emu: &mut Emu) {
@@ -301,7 +289,7 @@ where
         self.video.ui.text_color = colors[0];
         self.video.ui.bg_color = colors[3];
         self.apply_dmg_palette(emu, colors);
-        self.menu.request_update();
+        self.frontend.request_update();
 
         let suffix = if self.config.video.interface.is_palette_inverted {
             " (inv)"
@@ -325,7 +313,7 @@ where
     pub fn update_shader(&mut self, name: impl Into<String>) {
         self.config.video.render.gl.shader_name = name.into();
         self.video.update_config(&self.config.video);
-        self.menu.request_update();
+        self.frontend.request_update();
         self.notifications.add(format!(
             "Shader: {}",
             self.config.video.render.gl.shader_name
@@ -475,7 +463,7 @@ where
 
         emu.runtime.cpu.clock.bus.io.apu.config = self.config.audio.get_apu_config();
         self.state = AppState::Running;
-        self.menu = AppMenu::new(&self.roms);
+        self.frontend = ActiveFrontend::new(&self.roms);
 
         if !is_reload && self.config.auto_save_state {
             let path = self.roms.get_last_path().unwrap();
