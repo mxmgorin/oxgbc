@@ -110,4 +110,28 @@ impl AppVideo {
     pub fn handle_resize(&mut self, mode: ScaleMode) {
         self.backend.handle_resize(mode);
     }
+
+    /// Returns whether egui consumed the event.
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
+        self.backend.egui_on_event(event)
+    }
+
+    /// Draws egui over the frame already drawn; [`Self::render`] presents it.
+    #[cfg(feature = "frontend-modern")]
+    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&egui_sdl2::egui::Context)) {
+        self.backend.render_egui(run_ui);
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_repaint_delay(&self) -> Duration {
+        self.backend.egui_repaint_delay()
+    }
+}
+
+#[cfg(feature = "frontend-modern")]
+impl Drop for AppVideo {
+    fn drop(&mut self) {
+        self.backend.destroy_egui();
+    }
 }

@@ -7,9 +7,13 @@ use sdl2::video::{GLContext, GLProfile, Window};
 use sdl2::{Sdl, VideoSubsystem};
 use std::ffi::CStr;
 use std::ptr;
+#[cfg(feature = "frontend-modern")]
+use std::sync::Arc;
 
 pub struct GlBackend {
     gl: GLSetup,
+    #[cfg(feature = "frontend-modern")]
+    egui: egui_sdl2::EguiGlow,
     shader_program: u32,
     frame_texture_id: u32,
     prev_frame_texture_id: u32,
@@ -24,15 +28,18 @@ pub struct GlBackend {
 impl GlBackend {
     pub fn new(sdl: &Sdl, game_rect: Rect, config: &RenderConfig) -> Result<Self, String> {
         let gl = create_gl_with_fallback(sdl, game_rect.width(), game_rect.height())?;
+        #[cfg(feature = "frontend-modern")]
+        let egui = egui_sdl2::EguiGlow::new(&gl.window, gl.glow.clone(), None, true);
 
         unsafe {
-            gl::Enable(gl::TEXTURE_2D);
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
             gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
 
         let mut obj = Self {
+            #[cfg(feature = "frontend-modern")]
+            egui,
             shader_program: 0,
             frame_texture_id: 0,
             vao: 0,
@@ -75,6 +82,12 @@ impl GlBackend {
     }
 
     pub fn draw_menu(&mut self, buffer: &[u8]) {
+        // Uniforms apply to the bound program, and egui's is still bound after it
+        // painted the previous frame.
+        unsafe {
+            gl::UseProgram(self.shader_program);
+        }
+
         self.uniform_locations
             .send_frame_blend_mode(ShaderFrameBlendMode::None);
 
@@ -124,6 +137,10 @@ impl GlBackend {
         let height = RenderConfig::HEIGHT;
 
         unsafe {
+            // egui_glow leaves its premultiplied-alpha blend func behind.
+            #[cfg(feature = "frontend-modern")]
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
             gl::Clear(gl::COLOR_BUFFER_BIT);
             gl::UseProgram(self.shader_program);
 
@@ -194,6 +211,29 @@ impl GlBackend {
 
     pub fn show(&self) {
         self.gl.window.gl_swap_window();
+    }
+
+    /// Returns whether egui consumed the event.
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
+        self.egui.on_event(&self.gl.window, event).consumed
+    }
+
+    /// Runs and paints egui over the frame already drawn; [`Self::show`] presents.
+    #[cfg(feature = "frontend-modern")]
+    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&egui_sdl2::egui::Context)) {
+        self.egui.run(run_ui);
+        self.egui.paint();
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_repaint_delay(&self) -> std::time::Duration {
+        self.egui.repaint_delay()
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn destroy_egui(&mut self) {
+        self.egui.destroy();
     }
 
     /// Loads and initializes shaders + GPU resources
@@ -366,6 +406,9 @@ pub struct GLSetup {
     pub window: Window,
     pub shader_version: &'static str,
     pub gles: Option<Gles>,
+    /// Same context as the `gl` crate's, loaded through glow for egui.
+    #[cfg(feature = "frontend-modern")]
+    pub glow: Arc<egui_sdl2::egui_glow::glow::Context>,
 }
 
 #[derive(Debug)]
@@ -415,6 +458,12 @@ pub fn create_gl_with_fallback(sdl: &Sdl, width: u32, height: u32) -> Result<GLS
         };
 
         gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
+        #[cfg(feature = "frontend-modern")]
+        let glow = Arc::new(unsafe {
+            egui_sdl2::egui_glow::glow::Context::from_loader_function(|s| {
+                video.gl_get_proc_address(s) as *const _
+            })
+        });
 
         let gles = if use_gles && is_gles2 {
             let mut frag_prec = "mediump";
@@ -471,6 +520,8 @@ pub fn create_gl_with_fallback(sdl: &Sdl, width: u32, height: u32) -> Result<GLS
         return Ok(GLSetup {
             _context: context,
             _video_subsystem: video,
+            #[cfg(feature = "frontend-modern")]
+            glow,
             window,
             shader_version,
             gles,

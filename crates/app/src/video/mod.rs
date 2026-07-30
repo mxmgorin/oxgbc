@@ -228,4 +228,37 @@ impl VideoBackend {
             VideoBackend::Gl(x) => x.close_window(id),
         }
     }
+
+    /// Returns whether egui consumed the event.
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
+        match self {
+            VideoBackend::Sdl2(x) => x.egui_on_event(event),
+            VideoBackend::Gl(x) => x.egui_on_event(event),
+        }
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&egui_sdl2::egui::Context)) {
+        match self {
+            VideoBackend::Sdl2(x) => x.render_egui(run_ui),
+            VideoBackend::Gl(x) => x.render_egui(run_ui),
+        }
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_repaint_delay(&self) -> std::time::Duration {
+        match self {
+            VideoBackend::Sdl2(x) => x.egui_repaint_delay(),
+            VideoBackend::Gl(x) => x.egui_repaint_delay(),
+        }
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn destroy_egui(&mut self) {
+        match self {
+            VideoBackend::Sdl2(x) => x.destroy_egui(),
+            VideoBackend::Gl(x) => x.destroy_egui(),
+        }
+    }
 }

@@ -16,6 +16,8 @@ pub struct Sdl2Backend {
     game_texture: Texture,
     game_rect: Rect,
     filters: Sdl2Filters,
+    #[cfg(feature = "frontend-modern")]
+    egui: egui_sdl2::EguiCanvas,
     pub canvas: Canvas<Window>,
 }
 
@@ -46,6 +48,8 @@ impl Sdl2Backend {
             } else {
                 None
             },
+            #[cfg(feature = "frontend-modern")]
+            egui: egui_sdl2::EguiCanvas::new(&canvas),
             video_subsystem,
             texture_creator,
             canvas,
@@ -98,6 +102,29 @@ impl Sdl2Backend {
 
     pub fn show(&mut self) {
         self.canvas.present();
+    }
+
+    /// Returns whether egui consumed the event.
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
+        self.egui.on_event(&self.canvas, event).consumed
+    }
+
+    /// Runs and paints egui over the frame already drawn; [`Self::show`] presents.
+    #[cfg(feature = "frontend-modern")]
+    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&egui_sdl2::egui::Context)) {
+        self.egui.run(run_ui);
+        self.egui.paint(&mut self.canvas);
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn egui_repaint_delay(&self) -> std::time::Duration {
+        self.egui.repaint_delay()
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn destroy_egui(&mut self) {
+        self.egui.destroy();
     }
 
     pub fn set_scale(&mut self, scale: u32, mode: ScaleMode) -> Result<(), String> {
