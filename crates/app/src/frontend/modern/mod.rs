@@ -9,7 +9,10 @@ use crate::input::bindings::BindableInput;
 use crate::roms::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
+use core::cart::header::{CartHeader, CgbFlag};
 use core::ppu::framebuffer::FrameBuffer;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -103,18 +106,22 @@ fn title_of(path: &Path) -> String {
         .into_owned()
 }
 
-/// Spike shortcut: the real kind is the cart header's CGB flag, which needs the
-/// file read (and unzipped) — that arrives with the cached ROM metadata.
+/// Nintendo shipped the three shells by CGB support, so the header decides which
+/// cart is drawn. Read straight off disk for now — zipped ROMs would have to be
+/// inflated, and the result belongs in a cache with the rest of the ROM metadata.
 fn kind_of(path: &Path) -> ui::CartKind {
-    let is_cgb = path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("gbc"));
-
-    if is_cgb {
-        ui::CartKind::Cgb
-    } else {
-        ui::CartKind::Dmg
+    match read_cgb_flag(path).unwrap_or_default() {
+        CgbFlag::DmgOnly => ui::CartKind::Dmg,
+        CgbFlag::CgbEnhanced => ui::CartKind::CgbCompatible,
+        CgbFlag::CgbOnly => ui::CartKind::CgbOnly,
     }
+}
+
+fn read_cgb_flag(path: &Path) -> Option<CgbFlag> {
+    let mut header = [0; CartHeader::END];
+    File::open(path).ok()?.read_exact(&mut header).ok()?;
+
+    Some(CartHeader::parse_cgb_flag(&header))
 }
 
 fn into_nav(action: NavAction) -> ui::NavAction {
