@@ -119,7 +119,7 @@ impl AppVideo {
 
     /// Draws egui over the frame already drawn; [`Self::render`] presents it.
     #[cfg(feature = "frontend-modern")]
-    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&egui_sdl2::egui::Context)) {
+    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&mut egui_sdl2::egui::Ui)) {
         self.backend.render_egui(run_ui);
     }
 

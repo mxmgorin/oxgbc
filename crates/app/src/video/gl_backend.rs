@@ -221,8 +221,8 @@ impl GlBackend {
 
     /// Runs and paints egui over the frame already drawn; [`Self::show`] presents.
     #[cfg(feature = "frontend-modern")]
-    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&egui_sdl2::egui::Context)) {
-        self.egui.run(run_ui);
+    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&mut egui_sdl2::egui::Ui)) {
+        self.egui.run_ui(run_ui);
         self.egui.paint();
     }
 

@@ -7,7 +7,7 @@ authors = ["troidem <mxmgorin@gmail.com>"]
 [features]
 default = ["frontend-modern", "file-dialog", "file-browser"]
 # Exactly one frontend per build.
-frontend-modern = ["dep:egui-sdl2"]
+frontend-modern = ["dep:egui-sdl2", "dep:ui"]
 frontend-retro = []
 file-dialog = []
 file-browser = []
@@ -26,11 +26,13 @@ indexmap = { version = "2.10.0", features = ["serde"] }
 arrayvec = "0.7.6"
 zip = "8.2.0"
 # `egui` and `glow` come through this dep, so their versions can't drift.
-egui-sdl2 = { version = "0.6", default-features = false, features = [
+# TODO: drop `path` once 0.7.0 is published.
+egui-sdl2 = { version = "0.7", path = "../../../egui-sdl2", default-features = false, features = [
     "glow-backend",
     "canvas-backend",
     "links",
 ], optional = true }
+ui = { path = "../ui", optional = true }
 
 [target.'cfg(target_os="macos")'.dependencies.sdl2]
 features=["bundled", "static-link"]

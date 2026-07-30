@@ -239,7 +239,7 @@ impl VideoBackend {
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&egui_sdl2::egui::Context)) {
+    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&mut egui_sdl2::egui::Ui)) {
         match self {
             VideoBackend::Sdl2(x) => x.render_egui(run_ui),
             VideoBackend::Gl(x) => x.render_egui(run_ui),

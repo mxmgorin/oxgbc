@@ -1,6 +1,6 @@
-//! The egui frontend. Spike stage: a throwaway panel over the paused game that
-//! exercises the two backends' egui integration (GL and canvas) and its event
-//! routing. The real library/settings screens come from the `ui` crate later.
+//! The egui frontend. Spike stage: the library screen from the `ui` crate over
+//! the paused game, driven by the same directional input as the retro menu. The
+//! remaining screens (pause overlay, settings) and cover art come later.
 
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
@@ -10,23 +10,27 @@ use crate::roms::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
 use core::ppu::framebuffer::FrameBuffer;
-use egui_sdl2::egui;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Cap on egui's own repaint delay, so input keeps being polled while it idles.
 const MAX_FRAME_DELAY: Duration = Duration::from_millis(30);
-const NAV_LOG_LEN: usize = 6;
 
 #[derive(Default)]
 pub struct ModernFrontend {
+    focus: ui::GridFocus,
+    entries: Vec<ui::RomEntry>,
+    paths: Vec<PathBuf>,
+    stale: bool,
     frame_delay: Duration,
-    nav_log: Vec<&'static str>,
-    slider: f32,
 }
 
 impl Frontend for ModernFrontend {
-    fn new(_roms: &RomsState) -> Self {
-        Self::default()
+    fn new(roms: &RomsState) -> Self {
+        let mut obj = Self::default();
+        obj.load_library(roms);
+
+        obj
     }
 
     fn nav<FS: PlatformFileSystem>(
@@ -34,56 +38,92 @@ impl Frontend for ModernFrontend {
         action: NavAction,
         _ctx: FrontendCtx<'_, FS>,
     ) -> Option<AppCmd> {
-        // No focus model yet; log the action so the bridge can be seen working.
-        self.nav_log.push(match action {
-            NavAction::Up => "Up",
-            NavAction::Down => "Down",
-            NavAction::Left => "Left",
-            NavAction::Right => "Right",
-            NavAction::Confirm => "Confirm",
-            NavAction::Back => "Back",
-        });
-
-        if self.nav_log.len() > NAV_LOG_LEN {
-            self.nav_log.remove(0);
+        match self.focus.nav(into_nav(action))? {
+            ui::FocusEvent::Activate(index) => {
+                Some(AppCmd::LoadFile(self.paths.get(index)?.clone()))
+            }
+            // Nothing to back out of until the library gains sub-screens.
+            ui::FocusEvent::Back => None,
         }
-
-        None
     }
 
     fn capture_bind<I: BindableInput>(&mut self, _input: I, _pressed: bool) -> Option<AppCmd> {
         None
     }
 
-    fn request_update(&mut self) {}
+    fn request_update(&mut self) {
+        self.stale = true;
+    }
 
     fn render(
         &mut self,
         video: &mut AppVideo,
         fb: &mut FrameBuffer,
-        config: &AppConfig,
+        _config: &AppConfig,
         roms: &RomsState,
     ) {
-        video.draw_menu(fb);
-        let nav = self.nav_log.join(" ");
-        let roms_len = roms.loaded_count();
-        let scale = config.video.interface.scale;
-        let slider = &mut self.slider;
+        if self.stale {
+            self.load_library(roms);
+        }
 
-        video.render_egui(&mut |ctx| {
-            egui::Window::new("oxGBC")
-                .default_pos([16.0, 16.0])
-                .show(ctx, |ui| {
-                    ui.label(format!("roms: {roms_len}   scale: {scale}"));
-                    ui.add(egui::Slider::new(slider, 0.0..=1.0).text("pointer test"));
-                    ui.label(format!("nav: {nav}"));
-                });
-        });
+        video.draw_menu(fb);
+        let view = ui::LibraryView {
+            entries: &self.entries,
+        };
+        let focus = &mut self.focus;
+        video.render_egui(&mut |egui_ui| ui::library(egui_ui, &view, focus));
 
         self.frame_delay = video.egui_repaint_delay().min(MAX_FRAME_DELAY);
     }
 
     fn frame_delay(&self) -> Duration {
         self.frame_delay
+    }
+}
+
+impl ModernFrontend {
+    fn load_library(&mut self, roms: &RomsState) {
+        self.paths = roms.iter_opened().cloned().collect();
+        self.entries = self
+            .paths
+            .iter()
+            .map(|path| ui::RomEntry {
+                title: title_of(path),
+                kind: kind_of(path),
+            })
+            .collect();
+        self.stale = false;
+    }
+}
+
+fn title_of(path: &Path) -> String {
+    path.file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Spike shortcut: the real kind is the cart header's CGB flag, which needs the
+/// file read (and unzipped) — that arrives with the cached ROM metadata.
+fn kind_of(path: &Path) -> ui::CartKind {
+    let is_cgb = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gbc"));
+
+    if is_cgb {
+        ui::CartKind::Cgb
+    } else {
+        ui::CartKind::Dmg
+    }
+}
+
+fn into_nav(action: NavAction) -> ui::NavAction {
+    match action {
+        NavAction::Up => ui::NavAction::Up,
+        NavAction::Down => ui::NavAction::Down,
+        NavAction::Left => ui::NavAction::Left,
+        NavAction::Right => ui::NavAction::Right,
+        NavAction::Confirm => ui::NavAction::Confirm,
+        NavAction::Back => ui::NavAction::Back,
     }
 }
