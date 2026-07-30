@@ -18,10 +18,10 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 use zip::ZipArchive;
 
-// A build with no frontend has no UI at all, and two would both claim
-// `ActiveFrontend` — fail at the manifest rather than deep in a type error.
-#[cfg(not(feature = "frontend-retro"))]
-compile_error!("select exactly one frontend: enable `frontend-retro`");
+// Both enabled is not an error: a workspace build unifies desktop's modern with
+// android's retro, and modern wins (see `frontend::ActiveFrontend`).
+#[cfg(not(any(feature = "frontend-modern", feature = "frontend-retro")))]
+compile_error!("select a frontend: `frontend-modern` or `frontend-retro`");
 
 pub mod app;
 pub mod audio;
