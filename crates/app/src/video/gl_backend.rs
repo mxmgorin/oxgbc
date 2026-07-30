@@ -295,6 +295,11 @@ impl GlBackend {
 
         self.shader_program = program;
 
+        // Uniforms below go to the bound program; nothing binds it after linking.
+        unsafe {
+            gl::UseProgram(program);
+        }
+
         self.uniform_locations = get_uniform_locations(self.shader_program);
         self.uniform_locations.send_image();
         self.uniform_locations
