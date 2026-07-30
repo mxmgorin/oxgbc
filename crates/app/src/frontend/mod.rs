@@ -1,9 +1,11 @@
 //! The UI seam: everything the app calls to draw and drive its menus. One
-//! frontend is selected at compile time ([`ActiveFrontend`]) — today only the
-//! retro text menu, an egui one later — so the app never sees UI internals.
+//! frontend is selected at compile time ([`ActiveFrontend`]) — the retro text
+//! menu or the modern egui UI — so the app never sees UI internals.
 //!
 //! Stays free of any UI toolkit: only `AppCmd`, config and platform types.
 
+#[cfg(feature = "frontend-modern")]
+pub mod modern;
 #[cfg(feature = "frontend-retro")]
 pub mod retro;
 
@@ -16,7 +18,11 @@ use crate::PlatformFileSystem;
 use core::ppu::framebuffer::FrameBuffer;
 use std::time::Duration;
 
-#[cfg(feature = "frontend-retro")]
+/// Modern wins when both features are on; every `frontend-modern` cfg elsewhere
+/// follows the same rule, so the egui glue in `video/` matches this alias.
+#[cfg(feature = "frontend-modern")]
+pub type ActiveFrontend = modern::ModernFrontend;
+#[cfg(all(feature = "frontend-retro", not(feature = "frontend-modern")))]
 pub type ActiveFrontend = retro::RetroFrontend;
 
 /// Directional intent from any bound input, already resolved from joypad

@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["troidem <mxmgorin@gmail.com>"]
 
 [features]
-default = ["frontend-retro", "file-dialog", "file-browser"]
+default = ["frontend-modern", "file-dialog", "file-browser"]
 # Exactly one frontend per build.
 frontend-modern = ["dep:egui-sdl2"]
 frontend-retro = []

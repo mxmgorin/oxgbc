@@ -48,6 +48,13 @@ impl InputHandler {
         FD: PlatformFileDialog,
     {
         while let Some(event) = self.event_pump.poll_event() {
+            // egui tracks window size and focus even while the game runs, but
+            // only owns the input while its UI is up.
+            #[cfg(feature = "frontend-modern")]
+            if app.video.egui_on_event(&event) && app.state == AppState::Paused {
+                continue;
+            }
+
             match event {
                 Event::ControllerDeviceAdded { which, .. } => {
                     if let Ok(controller) = self.game_controller_subsystem.open(which) {
