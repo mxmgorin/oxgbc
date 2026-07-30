@@ -25,9 +25,8 @@ log = "0.4.27"
 indexmap = { version = "2.10.0", features = ["serde"] }
 arrayvec = "0.7.6"
 zip = "8.2.0"
-# TODO: drop `path` once 0.6.0 is published; CI can't resolve it. `egui`/`glow`
-# come through this dep, so their versions can't drift.
-egui-sdl2 = { version = "0.6", path = "../../../egui-sdl2", default-features = false, features = [
+# `egui` and `glow` come through this dep, so their versions can't drift.
+egui-sdl2 = { version = "0.6", default-features = false, features = [
     "glow-backend",
     "canvas-backend",
     "links",
