@@ -26,8 +26,7 @@ indexmap = { version = "2.10.0", features = ["serde"] }
 arrayvec = "0.7.6"
 zip = "8.2.0"
 # `egui` and `glow` come through this dep, so their versions can't drift.
-# TODO: drop `path` once 0.7.0 is published.
-egui-sdl2 = { version = "0.7", path = "../../../egui-sdl2", default-features = false, features = [
+egui-sdl2 = { version = "0.7", default-features = false, features = [
     "glow-backend",
     "canvas-backend",
     "links",
