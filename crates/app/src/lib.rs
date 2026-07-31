@@ -26,6 +26,7 @@ compile_error!("select a frontend: `frontend-modern` or `frontend-retro`");
 pub mod app;
 pub mod audio;
 pub mod battery;
+pub mod cmd;
 pub mod config;
 pub mod file_browser;
 pub mod frontend;
@@ -34,7 +35,6 @@ pub mod notification;
 pub mod palette;
 pub mod roms;
 pub mod video;
-pub mod cmd;
 
 pub fn is_zip(path: &Path) -> bool {
     let extension = path

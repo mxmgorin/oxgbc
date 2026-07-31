@@ -70,7 +70,8 @@ impl<I: BindableInput> InputBindings<I> {
     }
 
     pub fn get_desc(&self, cmd: &AppCmd) -> String {
-        let desc = self.get_inputs(cmd)
+        let desc = self
+            .get_inputs(cmd)
             .into_iter()
             .map(|(i, _)| i.name())
             .collect::<Vec<_>>()

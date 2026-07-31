@@ -6,8 +6,10 @@ pub mod cart;
 pub mod library;
 pub mod menu;
 pub mod nav;
+pub mod settings;
 
 pub use cart::CartKind;
 pub use library::{LibraryView, RomEntry};
 pub use menu::{Menu, UiCmd};
 pub use nav::NavAction;
+pub use settings::{Control, Row, Section, SettingId, SettingsView};

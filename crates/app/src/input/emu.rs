@@ -39,6 +39,7 @@ where
         config: &app.config,
         fs: &app.platform.fs,
         roms: &app.roms,
+        palettes: &app.palettes,
     };
 
     app.frontend.nav(action, ctx)

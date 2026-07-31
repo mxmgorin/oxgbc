@@ -25,10 +25,23 @@ const FOCUS_SCALE: f32 = 1.08;
 const RING: f32 = 0.06;
 
 /// Takes egui's root [`Ui`] (what panels are shown into), so the same screen
-/// works under any backend that can run egui.
-pub fn library(root: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &mut Vec<UiCmd>) {
+/// works under any backend that can run egui. Returns whether the settings
+/// button was pressed — that switches screen, which is the menu's business.
+pub fn library(
+    root: &mut Ui,
+    view: &LibraryView,
+    focus: &mut GridFocus,
+    out: &mut Vec<UiCmd>,
+) -> bool {
+    let mut open_settings = false;
+
     egui::CentralPanel::default().show(root, |ui| {
-        ui.heading("Library");
+        ui.horizontal(|ui| {
+            ui.heading("Library");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                open_settings = ui.button("Settings").clicked();
+            });
+        });
         ui.add_space(MIN_GAP * 0.5);
 
         if view.entries.is_empty() {
@@ -39,9 +52,12 @@ pub fn library(root: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &m
 
         egui::ScrollArea::vertical().show(ui, |ui| shelf(ui, view, focus, out));
     });
+
+    open_settings
 }
 
 fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &mut Vec<UiCmd>) {
+    let follow_focus = focus.take_moved();
     let tile = Vec2::new(TILE_WIDTH, TILE_WIDTH * cart::ASPECT);
     // Every cell reserves what the focused cart needs, so growing one never
     // overflows the row — at the panel's edges that overflow is clipped away.
@@ -80,6 +96,11 @@ fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &mut Vec<U
 
                 if response.clicked() {
                     out.push(UiCmd::LaunchRom(index));
+                }
+
+                // Directional input can walk the highlight off-screen; bring it back.
+                if focused && follow_focus {
+                    ui.scroll_to_rect(rect, None);
                 }
 
                 let size = if focused { tile * FOCUS_SCALE } else { tile };

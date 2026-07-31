@@ -2,7 +2,7 @@ use crate::audio::AppAudio;
 use crate::battery::BatterySave;
 use crate::config::{AppConfig, VideoBackendType};
 
-use crate::frontend::{ActiveFrontend, Frontend};
+use crate::frontend::{ActiveFrontend, Frontend, FrontendCtx};
 use crate::input::handler::InputHandler;
 use crate::notification::Notifications;
 use crate::palette::LcdPalette;
@@ -43,7 +43,7 @@ where
 {
     fps_str: ArrayString<10>,
     audio: AppAudio,
-    palettes: Box<[LcdPalette]>,
+    pub palettes: Box<[LcdPalette]>,
     pub video: AppVideo,
     pub state: AppState,
     pub config: AppConfig,
@@ -130,7 +130,8 @@ where
             self.state = AppState::Paused;
         }
 
-        self.frontend.open(!emu.runtime.cpu.clock.bus.cart.is_empty());
+        self.frontend
+            .open(!emu.runtime.cpu.clock.bus.cart.is_empty());
 
         loop {
             input.handle_events(self, emu);
@@ -203,8 +204,16 @@ where
     pub fn render_menu(&mut self, emu: &mut Emu) {
         emu.runtime.cpu.clock.reset();
         let fb = emu.get_framebuffer();
-        self.frontend
-            .render(&mut self.video, fb, &self.config, &self.roms);
+        self.frontend.render(
+            &mut self.video,
+            fb,
+            FrontendCtx {
+                config: &self.config,
+                fs: &self.platform.fs,
+                roms: &self.roms,
+                palettes: &self.palettes,
+            },
+        );
         self.update_notif(fb);
         self.video.render();
 

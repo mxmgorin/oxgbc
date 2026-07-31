@@ -2,6 +2,8 @@
 //! owns the platform half — building the view models from app state and turning
 //! the UI's requests back into [`AppCmd`]s.
 
+mod settings;
+
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::frontend::{Frontend, FrontendCtx, NavAction};
@@ -26,6 +28,8 @@ pub struct ModernFrontend {
     menu: ui::Menu,
     entries: Vec<ui::RomEntry>,
     paths: Vec<PathBuf>,
+    /// Rebuilt from the config whenever the app reports a change.
+    settings: ui::SettingsView,
     /// Filled by pointer input during `render`, drained by the app afterwards.
     pending: VecDeque<AppCmd>,
     stale: bool,
@@ -34,7 +38,10 @@ pub struct ModernFrontend {
 
 impl Frontend for ModernFrontend {
     fn new(roms: &RomsState) -> Self {
-        let mut obj = Self::default();
+        let mut obj = Self {
+            stale: true,
+            ..Default::default()
+        };
         obj.load_library(roms);
 
         obj
@@ -43,11 +50,12 @@ impl Frontend for ModernFrontend {
     fn nav<FS: PlatformFileSystem>(
         &mut self,
         action: NavAction,
-        _ctx: FrontendCtx<'_, FS>,
+        ctx: FrontendCtx<'_, FS>,
     ) -> Option<AppCmd> {
-        let cmd = self.menu.nav(into_nav(action))?;
+        self.refresh(&ctx);
+        let cmd = self.menu.nav(into_nav(action), &self.settings)?;
 
-        self.app_cmd(cmd)
+        self.app_cmd(cmd, ctx.config)
     }
 
     fn capture_bind<I: BindableInput>(&mut self, _input: I, _pressed: bool) -> Option<AppCmd> {
@@ -66,27 +74,25 @@ impl Frontend for ModernFrontend {
         self.pending.pop_front()
     }
 
-    fn render(
+    fn render<FS: PlatformFileSystem>(
         &mut self,
         video: &mut AppVideo,
         fb: &mut FrameBuffer,
-        _config: &AppConfig,
-        roms: &RomsState,
+        ctx: FrontendCtx<'_, FS>,
     ) {
-        if self.stale {
-            self.load_library(roms);
-        }
-
+        self.refresh(&ctx);
         video.draw_menu(fb);
-        let view = ui::LibraryView {
+
+        let library = ui::LibraryView {
             entries: &self.entries,
         };
         let menu = &mut self.menu;
+        let settings = &self.settings;
         let mut cmds = Vec::new();
-        video.render_egui(&mut |egui_ui| menu.show(egui_ui, &view, &mut cmds));
+        video.render_egui(&mut |egui_ui| menu.show(egui_ui, &library, settings, &mut cmds));
 
         for cmd in cmds {
-            if let Some(cmd) = self.app_cmd(cmd) {
+            if let Some(cmd) = self.app_cmd(cmd, ctx.config) {
                 self.pending.push_back(cmd);
             }
         }
@@ -100,6 +106,18 @@ impl Frontend for ModernFrontend {
 }
 
 impl ModernFrontend {
+    /// Both view models are read-only snapshots, so they only need rebuilding
+    /// when the app says something under them changed.
+    fn refresh<FS: PlatformFileSystem>(&mut self, ctx: &FrontendCtx<'_, FS>) {
+        if !self.stale {
+            return;
+        }
+
+        self.load_library(ctx.roms);
+        self.settings = settings::view(ctx.config, ctx.palettes);
+        self.stale = false;
+    }
+
     fn load_library(&mut self, roms: &RomsState) {
         self.paths = roms.iter_opened().cloned().collect();
         self.entries = self
@@ -110,11 +128,11 @@ impl ModernFrontend {
                 kind: kind_of(path),
             })
             .collect();
-        self.stale = false;
     }
 
-    fn app_cmd(&self, cmd: ui::UiCmd) -> Option<AppCmd> {
+    fn app_cmd(&self, cmd: ui::UiCmd, config: &AppConfig) -> Option<AppCmd> {
         Some(match cmd {
+            ui::UiCmd::Setting { id, step } => return settings::apply(id, step, config),
             ui::UiCmd::LaunchRom(index) => AppCmd::LoadFile(self.paths.get(index)?.clone()),
             ui::UiCmd::Resume => AppCmd::ToggleMenu,
             ui::UiCmd::SaveState => AppCmd::SaveState(SaveStateCmd::Create, None),

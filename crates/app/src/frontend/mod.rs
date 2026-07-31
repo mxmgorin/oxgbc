@@ -12,6 +12,7 @@ pub mod retro;
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::input::bindings::BindableInput;
+use crate::palette::LcdPalette;
 use crate::roms::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
@@ -43,6 +44,7 @@ pub struct FrontendCtx<'a, FS: PlatformFileSystem> {
     pub config: &'a AppConfig,
     pub fs: &'a FS,
     pub roms: &'a RomsState,
+    pub palettes: &'a [LcdPalette],
 }
 
 pub trait Frontend {
@@ -70,12 +72,11 @@ pub trait Frontend {
     /// way out, since rendering can't return through the UI toolkit.
     fn take_cmd(&mut self) -> Option<AppCmd>;
 
-    fn render(
+    fn render<FS: PlatformFileSystem>(
         &mut self,
         video: &mut AppVideo,
         fb: &mut FrameBuffer,
-        config: &AppConfig,
-        roms: &RomsState,
+        ctx: FrontendCtx<'_, FS>,
     );
 
     /// How long to idle after a frame while the UI is open.

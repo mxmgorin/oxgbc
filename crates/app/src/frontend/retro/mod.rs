@@ -5,7 +5,6 @@
 pub mod menu;
 
 use crate::cmd::AppCmd;
-use crate::config::AppConfig;
 use crate::frontend::{Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
 use crate::roms::RomsState;
@@ -64,14 +63,13 @@ impl Frontend for RetroFrontend {
     }
 
     #[inline(always)]
-    fn render(
+    fn render<FS: PlatformFileSystem>(
         &mut self,
         video: &mut AppVideo,
         fb: &mut FrameBuffer,
-        config: &AppConfig,
-        roms: &RomsState,
+        ctx: FrontendCtx<'_, FS>,
     ) {
-        let (items, updated) = self.menu.get_items(config, roms);
+        let (items, updated) = self.menu.get_items(ctx.config, ctx.roms);
 
         if updated {
             video.ui.fill_menu(fb, items, true, true);

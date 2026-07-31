@@ -153,7 +153,8 @@ impl InputHandler {
                     app.state = AppState::Running;
                 } else {
                     app.state = AppState::Paused;
-                    app.frontend.open(!emu.runtime.cpu.clock.bus.cart.is_empty());
+                    app.frontend
+                        .open(!emu.runtime.cpu.clock.bus.cart.is_empty());
                     app.frontend.request_update();
                 }
             }
@@ -197,137 +198,146 @@ impl InputHandler {
                     app.notifications.add(format!("Found {count} ROMs"));
                 }
             }
-            AppCmd::ChangeConfig(cmd) => match cmd {
-                ChangeConfigCmd::Volume(x) => app.change_volume(emu, x),
-                ChangeConfigCmd::Scale(x) => app.change_scale(x).unwrap(),
-                ChangeConfigCmd::TileWindow => {
-                    app.config.video.interface.show_tiles = !app.config.video.interface.show_tiles;
-                    app.video.update_config(&app.config.video);
-                }
-                ChangeConfigCmd::Fullscreen => app.toggle_fullscreen(),
-                ChangeConfigCmd::Fps => {
-                    app.config.video.interface.show_fps = !app.config.video.interface.show_fps;
-                    emu.runtime
-                        .cpu
-                        .clock
-                        .bus
-                        .io
-                        .ppu
-                        .toggle_fps(app.config.video.interface.show_fps);
-                }
-                ChangeConfigCmd::SpinDuration(x) => {
-                    emu.config.spin_duration = core::change_duration(emu.config.spin_duration, x);
-                    app.config.emulation.spin_duration = emu.config.spin_duration;
-                }
-                ChangeConfigCmd::NextPalette => app.next_palette(emu),
-                ChangeConfigCmd::PrevPalette => app.prev_palette(emu),
-                ChangeConfigCmd::ToggleMute => app.config.audio.mute = !app.config.audio.mute,
-                ChangeConfigCmd::NormalSpeed(x) => {
-                    emu.config.normal_speed =
-                        core::change_f64_rounded(emu.config.normal_speed, x as f64).max(0.05);
-                    app.config.emulation.normal_speed = emu.config.normal_speed;
-                }
-                ChangeConfigCmd::TurboSpeed(x) => {
-                    emu.config.turbo_speed =
-                        core::change_f64_rounded(emu.config.turbo_speed, x as f64).max(0.05);
-                    app.config.emulation.turbo_speed = emu.config.turbo_speed;
-                }
-                ChangeConfigCmd::SlowSpeed(x) => {
-                    emu.config.slow_speed =
-                        core::change_f64_rounded(emu.config.slow_speed, x as f64).max(0.05);
-                    app.config.emulation.slow_speed = emu.config.slow_speed;
-                }
-                ChangeConfigCmd::RewindSize(x) => {
-                    emu.config.rewind_size =
-                        core::change_usize(emu.config.rewind_size, x).clamp(0, 500);
-                    app.config.emulation.rewind_size = emu.config.rewind_size;
-                }
-                ChangeConfigCmd::RewindFrames(delta) => {
-                    emu.config.rewind_frames =
-                        core::change_usize(emu.config.rewind_frames, delta).clamp(0, 600);
-                    app.config.emulation.rewind_frames = emu.config.rewind_frames;
-                }
-                ChangeConfigCmd::AutoSaveState => {
-                    app.config.auto_save_state = !app.config.auto_save_state
-                }
-                ChangeConfigCmd::AudioBufferSize(x) => {
-                    emu.runtime.cpu.clock.bus.io.apu.config.buffer_size =
-                        core::change_usize(emu.runtime.cpu.clock.bus.io.apu.config.buffer_size, x)
-                            .clamp(0, 2560);
-                    emu.runtime.cpu.clock.bus.io.apu.update_buffer_size();
-                    app.config.audio.buffer_size =
-                        emu.runtime.cpu.clock.bus.io.apu.config.buffer_size;
-                }
-                ChangeConfigCmd::MuteTurbo => {
-                    app.config.audio.mute_turbo = !app.config.audio.mute_turbo
-                }
-                ChangeConfigCmd::MuteSlow => {
-                    app.config.audio.mute_slow = !app.config.audio.mute_slow
-                }
-                ChangeConfigCmd::ToggleChannel(i) => {
-                    app.config.audio.channel_mask ^= 1 << i;
-                    emu.runtime.cpu.clock.bus.io.apu.config.channel_mask =
-                        app.config.audio.channel_mask;
-                }
-                ChangeConfigCmd::Reset => {
-                    app.config = AppConfig::default();
-                    emu.config = app.config.emulation.clone();
-                    app.notifications.add("Defaults restored");
-                }
-                ChangeConfigCmd::ComboInterval(x) => {
-                    app.config.input.combo_interval =
-                        core::change_duration(app.config.input.combo_interval, x);
-                }
-                ChangeConfigCmd::SetSaveSlot(x) => app.config.current_save_slot = x,
-                ChangeConfigCmd::SetLoadSlot(x) => app.config.current_load_slot = x,
-                ChangeConfigCmd::InvertPalette => {
-                    app.config.video.interface.is_palette_inverted =
-                        !app.config.video.interface.is_palette_inverted;
-                    app.update_palette(emu);
-                }
-                ChangeConfigCmd::Video(x) => {
-                    if app.config.video.render.backend != x.render.backend {
-                        app.notifications.add("Restart is required to apply");
+            AppCmd::ChangeConfig(cmd) => {
+                match cmd {
+                    ChangeConfigCmd::Volume(x) => app.change_volume(emu, x),
+                    ChangeConfigCmd::Scale(x) => app.change_scale(x).unwrap(),
+                    ChangeConfigCmd::TileWindow => {
+                        app.config.video.interface.show_tiles =
+                            !app.config.video.interface.show_tiles;
+                        app.video.update_config(&app.config.video);
                     }
+                    ChangeConfigCmd::Fullscreen => app.toggle_fullscreen(),
+                    ChangeConfigCmd::Fps => {
+                        app.config.video.interface.show_fps = !app.config.video.interface.show_fps;
+                        emu.runtime
+                            .cpu
+                            .clock
+                            .bus
+                            .io
+                            .ppu
+                            .toggle_fps(app.config.video.interface.show_fps);
+                    }
+                    ChangeConfigCmd::SpinDuration(x) => {
+                        emu.config.spin_duration =
+                            core::change_duration(emu.config.spin_duration, x);
+                        app.config.emulation.spin_duration = emu.config.spin_duration;
+                    }
+                    ChangeConfigCmd::NextPalette => app.next_palette(emu),
+                    ChangeConfigCmd::PrevPalette => app.prev_palette(emu),
+                    ChangeConfigCmd::ToggleMute => app.config.audio.mute = !app.config.audio.mute,
+                    ChangeConfigCmd::NormalSpeed(x) => {
+                        emu.config.normal_speed =
+                            core::change_f64_rounded(emu.config.normal_speed, x as f64).max(0.05);
+                        app.config.emulation.normal_speed = emu.config.normal_speed;
+                    }
+                    ChangeConfigCmd::TurboSpeed(x) => {
+                        emu.config.turbo_speed =
+                            core::change_f64_rounded(emu.config.turbo_speed, x as f64).max(0.05);
+                        app.config.emulation.turbo_speed = emu.config.turbo_speed;
+                    }
+                    ChangeConfigCmd::SlowSpeed(x) => {
+                        emu.config.slow_speed =
+                            core::change_f64_rounded(emu.config.slow_speed, x as f64).max(0.05);
+                        app.config.emulation.slow_speed = emu.config.slow_speed;
+                    }
+                    ChangeConfigCmd::RewindSize(x) => {
+                        emu.config.rewind_size =
+                            core::change_usize(emu.config.rewind_size, x).clamp(0, 500);
+                        app.config.emulation.rewind_size = emu.config.rewind_size;
+                    }
+                    ChangeConfigCmd::RewindFrames(delta) => {
+                        emu.config.rewind_frames =
+                            core::change_usize(emu.config.rewind_frames, delta).clamp(0, 600);
+                        app.config.emulation.rewind_frames = emu.config.rewind_frames;
+                    }
+                    ChangeConfigCmd::AutoSaveState => {
+                        app.config.auto_save_state = !app.config.auto_save_state
+                    }
+                    ChangeConfigCmd::AudioBufferSize(x) => {
+                        emu.runtime.cpu.clock.bus.io.apu.config.buffer_size = core::change_usize(
+                            emu.runtime.cpu.clock.bus.io.apu.config.buffer_size,
+                            x,
+                        )
+                        .clamp(0, 2560);
+                        emu.runtime.cpu.clock.bus.io.apu.update_buffer_size();
+                        app.config.audio.buffer_size =
+                            emu.runtime.cpu.clock.bus.io.apu.config.buffer_size;
+                    }
+                    ChangeConfigCmd::MuteTurbo => {
+                        app.config.audio.mute_turbo = !app.config.audio.mute_turbo
+                    }
+                    ChangeConfigCmd::MuteSlow => {
+                        app.config.audio.mute_slow = !app.config.audio.mute_slow
+                    }
+                    ChangeConfigCmd::ToggleChannel(i) => {
+                        app.config.audio.channel_mask ^= 1 << i;
+                        emu.runtime.cpu.clock.bus.io.apu.config.channel_mask =
+                            app.config.audio.channel_mask;
+                    }
+                    ChangeConfigCmd::Reset => {
+                        app.config = AppConfig::default();
+                        emu.config = app.config.emulation.clone();
+                        app.notifications.add("Defaults restored");
+                    }
+                    ChangeConfigCmd::ComboInterval(x) => {
+                        app.config.input.combo_interval =
+                            core::change_duration(app.config.input.combo_interval, x);
+                    }
+                    ChangeConfigCmd::SetSaveSlot(x) => app.config.current_save_slot = x,
+                    ChangeConfigCmd::SetLoadSlot(x) => app.config.current_load_slot = x,
+                    ChangeConfigCmd::InvertPalette => {
+                        app.config.video.interface.is_palette_inverted =
+                            !app.config.video.interface.is_palette_inverted;
+                        app.update_palette(emu);
+                    }
+                    ChangeConfigCmd::Video(x) => {
+                        if app.config.video.render.backend != x.render.backend {
+                            app.notifications.add("Restart is required to apply");
+                        }
 
-                    app.config.video = *x;
-                    app.video.update_config(&app.config.video);
+                        app.config.video = *x;
+                        app.video.update_config(&app.config.video);
+                    }
+                    ChangeConfigCmd::IncSaveAndLoadSlots => {
+                        app.config.inc_save_slot();
+                        app.config.inc_load_slot();
+                        app.notifications.add(format!(
+                            "Save Slot: {}, Load Slot: {}",
+                            app.config.current_save_slot, app.config.current_load_slot
+                        ));
+                        app.frontend.request_update();
+                    }
+                    ChangeConfigCmd::DecSaveAndLoadSlots => {
+                        app.config.dec_load_slot();
+                        app.config.dec_save_slot();
+                        app.notifications.add(format!(
+                            "Save Slot: {}, Load Slot: {}",
+                            app.config.current_save_slot, app.config.current_load_slot
+                        ));
+                        app.frontend.request_update();
+                    }
+                    ChangeConfigCmd::NextShader => app.next_shader(),
+                    ChangeConfigCmd::PrevShader => app.prev_shader(),
+                    ChangeConfigCmd::FrameSkip(x) => {
+                        app.config.video.render.frame_skip = x;
+                        app.video.update_config(&app.config.video);
+                    }
+                    ChangeConfigCmd::SetGbModel(model) => {
+                        app.config.emulation.model = model;
+                        emu.config.model = model;
+                        emu.runtime.cpu.clock.bus.update_model(model);
+                        app.refresh_dmg_palette(emu);
+                    }
+                    ChangeConfigCmd::TargetFps(x) => {
+                        app.config.video.render.target_fps = x;
+                        app.video.update_config(&app.config.video);
+                    }
                 }
-                ChangeConfigCmd::IncSaveAndLoadSlots => {
-                    app.config.inc_save_slot();
-                    app.config.inc_load_slot();
-                    app.notifications.add(format!(
-                        "Save Slot: {}, Load Slot: {}",
-                        app.config.current_save_slot, app.config.current_load_slot
-                    ));
-                    app.frontend.request_update();
-                }
-                ChangeConfigCmd::DecSaveAndLoadSlots => {
-                    app.config.dec_load_slot();
-                    app.config.dec_save_slot();
-                    app.notifications.add(format!(
-                        "Save Slot: {}, Load Slot: {}",
-                        app.config.current_save_slot, app.config.current_load_slot
-                    ));
-                    app.frontend.request_update();
-                }
-                ChangeConfigCmd::NextShader => app.next_shader(),
-                ChangeConfigCmd::PrevShader => app.prev_shader(),
-                ChangeConfigCmd::FrameSkip(x) => {
-                    app.config.video.render.frame_skip = x;
-                    app.video.update_config(&app.config.video);
-                }
-                ChangeConfigCmd::SetGbModel(model) => {
-                    app.config.emulation.model = model;
-                    emu.config.model = model;
-                    emu.runtime.cpu.clock.bus.update_model(model);
-                    app.refresh_dmg_palette(emu);
-                }
-                ChangeConfigCmd::TargetFps(x) => {
-                    app.config.video.render.target_fps = x;
-                    app.video.update_config(&app.config.video);
-                }
-            },
+
+                // Both UIs show config values, so any change makes the screen stale.
+                app.frontend.request_update();
+            }
             AppCmd::ReleaseButton(btn) => {
                 if let Some(cmd) = handle_emu_btn(btn, false, app, emu) {
                     self.handle_cmd(app, emu, cmd);

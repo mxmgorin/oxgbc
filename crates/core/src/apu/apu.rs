@@ -69,8 +69,11 @@ pub struct ApuConfig {
     pub channel_mask: u8,
 }
 
+/// Square, square-with-sweep, wave and noise.
+pub const CHANNELS_COUNT: u8 = 4;
+
 pub fn default_channel_mask() -> u8 {
-    0x0F
+    (1 << CHANNELS_COUNT) - 1
 }
 
 impl ApuConfig {

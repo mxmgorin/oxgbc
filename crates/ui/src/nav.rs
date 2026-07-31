@@ -27,6 +27,9 @@ pub struct GridFocus {
     index: usize,
     len: usize,
     columns: usize,
+    /// Set when directional input moved the highlight, so the view can scroll it
+    /// into sight. Pointer hovering doesn't set it — the pointer is already there.
+    moved: bool,
 }
 
 impl GridFocus {
@@ -42,6 +45,11 @@ impl GridFocus {
 
     pub fn is_focused(&self, index: usize) -> bool {
         self.len > 0 && self.index == index
+    }
+
+    /// Whether the highlight moved since this was last asked.
+    pub fn take_moved(&mut self) -> bool {
+        std::mem::take(&mut self.moved)
     }
 
     /// Moves the highlight to a cell the pointer is over, keeping mixed
@@ -60,6 +68,8 @@ impl GridFocus {
         if self.len == 0 {
             return None;
         }
+
+        self.moved = true;
 
         match action {
             NavAction::Confirm => return Some(FocusEvent::Activate(self.index)),
@@ -155,6 +165,17 @@ mod tests {
         // Column 1's last cell is 4, not 7.
         assert_eq!(after(4, NavAction::Down), 1);
         assert_eq!(after(1, NavAction::Up), 4);
+    }
+
+    #[test]
+    fn only_directional_input_asks_for_a_scroll() {
+        let mut focus = ragged();
+        focus.focus(3);
+        assert!(!focus.take_moved());
+
+        focus.nav(NavAction::Down);
+        assert!(focus.take_moved());
+        assert!(!focus.take_moved());
     }
 
     #[test]
