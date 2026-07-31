@@ -45,13 +45,19 @@ const CORNER_BOTTOM: f32 = 0.05;
 /// The cut corner that stops a cart going in the wrong way round.
 const CHAMFER: f32 = 0.11;
 const RIDGES: usize = 5;
-const RIDGE_TOP: f32 = 0.055;
-const RIDGE_BOTTOM: f32 = 0.16;
-const BRAND_TOP: f32 = 0.045;
-const BRAND_BOTTOM: f32 = 0.17;
-const BRAND_INSET: f32 = 0.20;
+const RIDGE_TOP: f32 = 0.05;
+const RIDGE_BOTTOM: f32 = 0.225;
+const RIDGE_GROUP: f32 = 0.075;
+const BRAND_TOP: f32 = 0.04;
+const BRAND_BOTTOM: f32 = 0.235;
+/// Margin from the shell's side and the gap between the deck's parts.
+const DECK_INSET: f32 = 0.045;
+const DECK_GAP: f32 = 0.02;
+/// Text height and the room kept clear inside the oval, both fractions of width.
+const BRAND_TEXT: f32 = 0.085;
+const BRAND_PADDING: f32 = 0.05;
 const RECESS_INSET: f32 = 0.10;
-const RECESS_TOP: f32 = 0.28;
+const RECESS_TOP: f32 = 0.30;
 const RECESS_BOTTOM: f32 = 1.02;
 const LABEL_MARGIN: f32 = 0.022;
 const ARROW_HALF_WIDTH: f32 = 0.05;
@@ -127,7 +133,7 @@ fn shell_of(kind: CartKind) -> Shell {
             body: Color32::from_rgb(0xa7, 0xa2, 0x9a),
             shade: Color32::from_rgb(0x87, 0x82, 0x7a),
             highlight: Color32::from_rgb(0xc2, 0xbd, 0xb4),
-            emboss_text: Color32::from_rgb(0x8c, 0x88, 0x80),
+            emboss_text: Color32::from_rgb(0x6b, 0x67, 0x60),
             board: None,
             brand: "GAME BOY",
         },
@@ -135,7 +141,7 @@ fn shell_of(kind: CartKind) -> Shell {
             body: Color32::from_rgb(0x2c, 0x2c, 0x2e),
             shade: Color32::from_rgb(0x16, 0x16, 0x18),
             highlight: Color32::from_rgb(0x4d, 0x4d, 0x51),
-            emboss_text: Color32::from_rgb(0x55, 0x55, 0x59),
+            emboss_text: Color32::from_rgb(0x6a, 0x6a, 0x6f),
             board: None,
             brand: "GAME BOY",
         },
@@ -143,7 +149,7 @@ fn shell_of(kind: CartKind) -> Shell {
             body: Color32::from_rgb(0x6d, 0x66, 0x7c),
             shade: Color32::from_rgb(0x44, 0x3f, 0x52),
             highlight: Color32::from_rgb(0x94, 0x8d, 0xa6),
-            emboss_text: Color32::from_rgb(0x8b, 0x84, 0x9c),
+            emboss_text: Color32::from_rgb(0x2e, 0x2b, 0x38),
             board: Some(Color32::from_rgb(0x33, 0x52, 0x3f)),
             brand: "GAME BOY COLOR",
         },
@@ -192,11 +198,30 @@ fn at(rect: Rect, w: f32, x: f32, y: f32) -> Pos2 {
     rect.min + Vec2::new(w * x, w * y)
 }
 
+/// The top deck, laid out space-between: a ridge group against each side and the
+/// brand oval taking whatever is left, with the same gap either side of it.
+struct Deck {
+    ridges: [(f32, f32); 2],
+    brand: (f32, f32),
+}
+
+fn deck() -> Deck {
+    let left = (DECK_INSET, DECK_INSET + RIDGE_GROUP);
+    // The cut corner has come back inboard by the height the ridges start at, so
+    // the right group hangs off the edge there rather than off the tile's side.
+    let right_end = 1.0 - CHAMFER + RIDGE_TOP - DECK_INSET;
+    let right = (right_end - RIDGE_GROUP, right_end);
+
+    Deck {
+        brand: (left.1 + DECK_GAP, right.0 - DECK_GAP),
+        ridges: [left, right],
+    }
+}
+
 fn paint_ridges(ui: &Ui, rect: Rect, w: f32, shell: &Shell) {
-    const GROUPS: [(f32, f32); 2] = [(0.055, 0.15), (0.80, 0.90)];
     let painter = ui.painter();
 
-    for (from, to) in GROUPS {
+    for (from, to) in deck().ridges {
         let step = (to - from) / RIDGES as f32;
 
         for ridge in 0..RIDGES {
@@ -219,9 +244,10 @@ fn paint_ridges(ui: &Ui, rect: Rect, w: f32, shell: &Shell) {
 /// The embossed oval with the console's name in it.
 fn paint_brand(ui: &Ui, rect: Rect, w: f32, shell: &Shell) {
     let painter = ui.painter();
+    let (left, right) = deck().brand;
     let brand = Rect::from_min_max(
-        at(rect, w, BRAND_INSET, BRAND_TOP),
-        at(rect, w, 1.0 - BRAND_INSET, BRAND_BOTTOM),
+        at(rect, w, left, BRAND_TOP),
+        at(rect, w, right, BRAND_BOTTOM),
     );
     let radius = brand.height() * 0.5;
     painter.rect_filled(brand, radius, shell.shade);
@@ -231,13 +257,37 @@ fn paint_brand(ui: &Ui, rect: Rect, w: f32, shell: &Shell) {
         Stroke::new(w * 0.006, shell.highlight),
         egui::StrokeKind::Inside,
     );
-    painter.text(
-        brand.center(),
-        egui::Align2::CENTER_CENTER,
-        shell.brand,
-        FontId::proportional(w * 0.055),
-        shell.emboss_text,
+
+    // Moulded into the shell rather than printed: a lit edge below the letters
+    // and the darker face on top, which is what makes it readable on grey.
+    let galley = fit_brand(ui, shell.brand, brand.width() - w * BRAND_PADDING, w);
+    let pos = brand.center() - galley.size() * 0.5;
+    painter.galley(
+        pos + Vec2::new(0.0, w * 0.008),
+        galley.clone(),
+        shell.highlight,
     );
+    painter.galley(pos, galley, shell.emboss_text);
+}
+
+/// Lays the brand out at [`BRAND_TEXT`], shrinking it only as far as the oval
+/// demands — "GAME BOY COLOR" needs more room than "GAME BOY".
+fn fit_brand(ui: &Ui, brand: &str, max_width: f32, w: f32) -> std::sync::Arc<egui::Galley> {
+    let size = w * BRAND_TEXT;
+    let layout = |size: f32| {
+        ui.painter().layout_no_wrap(
+            brand.to_owned(),
+            FontId::proportional(size),
+            Color32::PLACEHOLDER,
+        )
+    };
+    let galley = layout(size);
+
+    if galley.size().x <= max_width {
+        return galley;
+    }
+
+    layout(size * max_width / galley.size().x)
 }
 
 /// The recessed area and the paper label inside it, with the title as art of last
