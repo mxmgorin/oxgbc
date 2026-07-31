@@ -3,6 +3,7 @@
 //! the UI's requests back into [`AppCmd`]s.
 
 mod settings;
+mod states;
 
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
@@ -30,6 +31,13 @@ pub struct ModernFrontend {
     paths: Vec<PathBuf>,
     /// Rebuilt from the config whenever the app reports a change.
     settings: ui::SettingsView,
+    /// Same, from the save-state files of the loaded game.
+    states: ui::StatesView,
+    /// Slot whose screen was read out of its state file, to keep it off the disk
+    /// while the sheet stays put.
+    shot_slot: Option<usize>,
+    /// Bumped for every rebuild, so the UI can tell one view from the next.
+    version: u64,
     /// Filled by pointer input during `render`, drained by the app afterwards.
     pending: VecDeque<AppCmd>,
     stale: bool,
@@ -53,7 +61,16 @@ impl Frontend for ModernFrontend {
         ctx: FrontendCtx<'_, FS>,
     ) -> Option<AppCmd> {
         self.refresh(&ctx);
-        let cmd = self.menu.nav(into_nav(action), &self.settings)?;
+        // Built here rather than by a method, so the borrow stays split from the
+        // menu's own field.
+        let views = ui::Views {
+            library: ui::LibraryView {
+                entries: &self.entries,
+            },
+            settings: &self.settings,
+            states: &self.states,
+        };
+        let cmd = self.menu.nav(into_nav(action), &views)?;
 
         self.app_cmd(cmd, ctx.config)
     }
@@ -81,15 +98,19 @@ impl Frontend for ModernFrontend {
         ctx: FrontendCtx<'_, FS>,
     ) {
         self.refresh(&ctx);
+        self.refresh_shot(&ctx);
         video.draw_menu(fb);
 
-        let library = ui::LibraryView {
-            entries: &self.entries,
+        let views = ui::Views {
+            library: ui::LibraryView {
+                entries: &self.entries,
+            },
+            settings: &self.settings,
+            states: &self.states,
         };
         let menu = &mut self.menu;
-        let settings = &self.settings;
         let mut cmds = Vec::new();
-        video.render_egui(&mut |egui_ui| menu.show(egui_ui, &library, settings, &mut cmds));
+        video.render_egui(&mut |egui_ui| menu.show(egui_ui, &views, &mut cmds));
 
         for cmd in cmds {
             if let Some(cmd) = self.app_cmd(cmd, ctx.config) {
@@ -115,7 +136,34 @@ impl ModernFrontend {
 
         self.load_library(ctx.roms);
         self.settings = settings::view(ctx.config, ctx.palettes);
+        self.version += 1;
+        self.states = states::view(ctx, self.version);
+        // The rebuilt view dropped the screen read for the open slot with it.
+        self.shot_slot = None;
         self.stale = false;
+    }
+
+    /// Fills in the open slot's screen when the slot has no shot of its own, which
+    /// only states written before shots existed are missing. Costs a whole state
+    /// file, so it runs once per slot the sheet lands on.
+    fn refresh_shot<FS: PlatformFileSystem>(&mut self, ctx: &FrontendCtx<'_, FS>) {
+        let open = self.menu.open_slot();
+
+        if open == self.shot_slot {
+            return;
+        }
+
+        self.shot_slot = open;
+        let Some(slot) = open else {
+            return;
+        };
+        let Some(state) = self.states.slots.iter_mut().find(|s| s.slot == slot) else {
+            return;
+        };
+
+        if state.shot.is_none() {
+            state.shot = states::load_shot(ctx, slot);
+        }
     }
 
     fn load_library(&mut self, roms: &RomsState) {
@@ -135,8 +183,10 @@ impl ModernFrontend {
             ui::UiCmd::Setting { id, step } => return settings::apply(id, step, config),
             ui::UiCmd::LaunchRom(index) => AppCmd::LoadFile(self.paths.get(index)?.clone()),
             ui::UiCmd::Resume => AppCmd::ToggleMenu,
-            ui::UiCmd::SaveState => AppCmd::SaveState(SaveStateCmd::Create, None),
-            ui::UiCmd::LoadState => AppCmd::SaveState(SaveStateCmd::Load, None),
+            ui::UiCmd::SaveState(slot) => AppCmd::SaveState(SaveStateCmd::Create, Some(slot)),
+            ui::UiCmd::LoadState(slot) => AppCmd::SaveState(SaveStateCmd::Load, Some(slot)),
+            ui::UiCmd::DeleteState(slot) => AppCmd::DeleteState(slot),
+            ui::UiCmd::RenameState(slot, name) => AppCmd::RenameState(slot, name),
             ui::UiCmd::RestartRom => AppCmd::RestartRom,
             ui::UiCmd::Quit => AppCmd::Quit,
         })

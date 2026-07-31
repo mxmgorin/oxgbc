@@ -1,12 +1,14 @@
 use crate::audio::AppAudio;
 use crate::battery::BatterySave;
-use crate::config::{AppConfig, VideoBackendType};
+use crate::config::{AppConfig, RenderConfig, VideoBackendType};
 
 use crate::frontend::{ActiveFrontend, Frontend, FrontendCtx};
 use crate::input::handler::InputHandler;
 use crate::notification::Notifications;
 use crate::palette::LcdPalette;
 use crate::roms::RomsState;
+use crate::state_meta::StateMeta;
+use crate::state_shot::StateShot;
 use crate::video::shader::{next_shader_by_name, prev_shader_by_name};
 use crate::video::AppVideo;
 use crate::{AppConfigFile, AppPlatform, PlatformFileDialog, PlatformFileSystem};
@@ -361,6 +363,28 @@ where
                     return;
                 }
 
+                // Overwriting a slot keeps whatever it was already called.
+                let kept = StateMeta::load_file(&name, &index)
+                    .map(|meta| meta.name)
+                    .unwrap_or_default();
+                let meta = StateMeta::new(&emu.runtime.cpu.clock.bus.cart, kept);
+
+                if let Err(err) = meta.save_file(&name, &index) {
+                    log::warn!("Failed save state meta: {err}");
+                }
+
+                let shot = StateShot::of(
+                    emu.get_framebuffer(),
+                    RenderConfig::WIDTH,
+                    RenderConfig::HEIGHT,
+                );
+
+                if let Err(err) = shot.save_file(&name, &index) {
+                    log::warn!("Failed save state shot: {err}");
+                }
+
+                // The UI lists the states on disk; one just appeared.
+                self.frontend.request_update();
                 let msg = format!("Saved save state: {index}");
                 self.notifications.add(msg);
             }
@@ -387,6 +411,68 @@ where
                 self.state = AppState::Running;
             }
         }
+    }
+
+    pub fn handle_delete_state(&mut self, index: usize) {
+        let name = self
+            .roms
+            .get_last_path()
+            .and_then(|path| self.platform.fs.get_file_name(path));
+
+        let Some(name) = name else {
+            log::error!("Failed delete_state: no game loaded");
+            return;
+        };
+
+        let index = index.to_string();
+
+        if let Err(err) = AppConfigFile::delete_save_state_file(&name, &index) {
+            log::error!("Failed delete_state: {err}");
+            return;
+        }
+
+        if let Err(err) = StateMeta::delete_file(&name, &index) {
+            log::warn!("Failed delete state meta: {err}");
+        }
+
+        if let Err(err) = StateShot::delete_file(&name, &index) {
+            log::warn!("Failed delete state shot: {err}");
+        }
+
+        // The UI lists the states on disk; one just went away.
+        self.frontend.request_update();
+        self.notifications
+            .add(format!("Deleted save state: {index}"));
+    }
+
+    /// Touches only the sidecar: the state itself has no idea what it is called.
+    pub fn handle_rename_state(&mut self, index: usize, name: String) {
+        let game = self
+            .roms
+            .get_last_path()
+            .and_then(|path| self.platform.fs.get_file_name(path));
+
+        let Some(game) = game else {
+            log::error!("Failed rename_state: no game loaded");
+            return;
+        };
+
+        let index = index.to_string();
+        let mut meta = StateMeta::load_file(&game, &index).unwrap_or_default();
+        meta.name = name;
+
+        if let Err(err) = meta.save_file(&game, &index) {
+            log::error!("Failed rename_state: {err}");
+            return;
+        }
+
+        self.frontend.request_update();
+        let msg = if meta.name.is_empty() {
+            format!("Cleared name of save state: {index}")
+        } else {
+            format!("Renamed save state {index}: {}", meta.name)
+        };
+        self.notifications.add(msg);
     }
 
     pub fn save_files(&mut self, emu: &mut Emu) -> Result<(), String> {

@@ -113,20 +113,28 @@ impl AppConfig {
         self.emulation = config;
     }
 
+    /// Highest save-state slot; a slot is a file named after its index, so this
+    /// is only a bound on how many a game may keep.
+    pub const MAX_SAVE_SLOT: usize = 99;
+
     pub fn inc_save_slot(&mut self) {
-        self.current_save_slot = core::move_next_wrapped(self.current_save_slot, 99);
+        self.current_save_slot =
+            core::move_next_wrapped(self.current_save_slot, Self::MAX_SAVE_SLOT);
     }
 
     pub fn dec_save_slot(&mut self) {
-        self.current_save_slot = core::move_prev_wrapped(self.current_save_slot, 99);
+        self.current_save_slot =
+            core::move_prev_wrapped(self.current_save_slot, Self::MAX_SAVE_SLOT);
     }
 
     pub fn inc_load_slot(&mut self) {
-        self.current_load_slot = core::move_next_wrapped(self.current_load_slot, 99);
+        self.current_load_slot =
+            core::move_next_wrapped(self.current_load_slot, Self::MAX_SAVE_SLOT);
     }
 
     pub fn dec_load_slot(&mut self) {
-        self.current_load_slot = core::move_prev_wrapped(self.current_load_slot, 99);
+        self.current_load_slot =
+            core::move_prev_wrapped(self.current_load_slot, Self::MAX_SAVE_SLOT);
     }
 }
 

@@ -6,16 +6,25 @@
 
 use crate::library::{library, LibraryView};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
+use crate::overlay;
 use crate::settings::{row_at, settings, SettingId, SettingsView};
-use egui::{Align, Color32, Frame, Layout, Rect, UiBuilder, Vec2};
+use crate::states::{self, RowPick, StatesView};
+use egui::Vec2;
 
-/// A request only the platform can carry out.
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+/// A request only the platform can carry out. Not `Copy`: a rename carries the
+/// name the user typed.
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum UiCmd {
     LaunchRom(usize),
     Resume,
-    SaveState,
-    LoadState,
+    /// Write the running game's state into this slot.
+    SaveState(usize),
+    /// Restore the state kept in this slot.
+    LoadState(usize),
+    /// Throw away the state kept in this slot.
+    DeleteState(usize),
+    /// Call this slot's state something; an empty name clears it.
+    RenameState(usize, String),
     RestartRom,
     /// Move a settings row by `step` (`-1`/`1`); toggles and actions ignore it.
     Setting {
@@ -25,6 +34,14 @@ pub enum UiCmd {
     Quit,
 }
 
+/// What every screen reads, gathered up so a new screen doesn't have to thread
+/// another argument through both entry points.
+pub struct Views<'a> {
+    pub library: LibraryView<'a>,
+    pub settings: &'a SettingsView,
+    pub states: &'a StatesView,
+}
+
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 enum Screen {
     #[default]
@@ -32,25 +49,32 @@ enum Screen {
     /// Over the dimmed game, when the UI is opened mid-play.
     Pause,
     Settings,
+    /// The game's save-state slots.
+    States,
+    /// What one slot, picked from the list, can be used for.
+    StateActions(usize),
+    /// Naming the state in one slot.
+    StateRename(usize),
+}
+
+/// What picking a pause row does: hand the platform a command, or move on to the
+/// screen behind the row.
+#[derive(Clone)]
+enum PauseAction {
+    Cmd(UiCmd),
+    Open(Screen),
 }
 
 /// A row of the pause overlay: what it says and what it does.
-const PAUSE_ITEMS: [(&str, UiCmd); 7] = [
-    ("Resume", UiCmd::Resume),
-    ("Save state", UiCmd::SaveState),
-    ("Load state", UiCmd::LoadState),
-    ("Restart", UiCmd::RestartRom),
-    ("Library", UiCmd::Resume),
-    ("Settings", UiCmd::Resume),
-    ("Quit", UiCmd::Quit),
+const PAUSE_ITEMS: [(&str, PauseAction); 6] = [
+    ("Resume", PauseAction::Cmd(UiCmd::Resume)),
+    ("Save states", PauseAction::Open(Screen::States)),
+    ("Restart", PauseAction::Cmd(UiCmd::RestartRom)),
+    ("Library", PauseAction::Open(Screen::Library)),
+    ("Settings", PauseAction::Open(Screen::Settings)),
+    ("Quit", PauseAction::Cmd(UiCmd::Quit)),
 ];
-/// Rows that switch screen instead of emitting their command.
-const PAUSE_LIBRARY: usize = 4;
-const PAUSE_SETTINGS: usize = 5;
 const OVERLAY_WIDTH: f32 = 260.0;
-const OVERLAY_DIM: Color32 = Color32::from_black_alpha(0xb4);
-const ROW_HEIGHT: f32 = 32.0;
-const ROW_GAP: f32 = 6.0;
 
 #[derive(Default)]
 pub struct Menu {
@@ -60,6 +84,10 @@ pub struct Menu {
     library: GridFocus,
     pause: GridFocus,
     settings: GridFocus,
+    states: GridFocus,
+    actions: GridFocus,
+    shots: states::ShotCache,
+    rename: states::RenameEdit,
 }
 
 impl Menu {
@@ -73,7 +101,16 @@ impl Menu {
         self.opener = self.screen;
     }
 
-    pub fn nav(&mut self, action: NavAction, view: &SettingsView) -> Option<UiCmd> {
+    /// The slot the UI is working on, so the platform knows which screen to read.
+    /// Renaming counts, so a detour through it doesn't throw the screen away.
+    pub fn open_slot(&self) -> Option<usize> {
+        match self.screen {
+            Screen::StateActions(slot) | Screen::StateRename(slot) => Some(slot),
+            _ => None,
+        }
+    }
+
+    pub fn nav(&mut self, action: NavAction, views: &Views<'_>) -> Option<UiCmd> {
         match self.screen {
             Screen::Library => match self.library.nav(action)? {
                 FocusEvent::Activate(index) => Some(UiCmd::LaunchRom(index)),
@@ -88,8 +125,73 @@ impl Menu {
                 FocusEvent::Activate(index) => self.activate_pause(index),
                 FocusEvent::Back => Some(UiCmd::Resume),
             },
-            Screen::Settings => self.nav_settings(action, view),
+            Screen::Settings => self.nav_settings(action, views.settings),
+            Screen::States => match self.states.nav(action)? {
+                FocusEvent::Activate(index) => {
+                    let pick = states::pick(views.states, index)?;
+
+                    self.pick_state(pick)
+                }
+                FocusEvent::Back => {
+                    self.screen = Screen::Pause;
+                    None
+                }
+            },
+            Screen::StateActions(slot) => match self.actions.nav(action)? {
+                FocusEvent::Activate(index) => {
+                    let action = states::action_at(index)?;
+
+                    self.act_on_slot(action, slot, views)
+                }
+                FocusEvent::Back => {
+                    self.screen = Screen::States;
+                    None
+                }
+            },
+            // The keyboard belongs to the text field, which egui drives itself;
+            // a gamepad can still back out of it.
+            Screen::StateRename(slot) => {
+                if action == NavAction::Back {
+                    self.screen = Screen::StateActions(slot);
+                }
+
+                None
+            }
         }
+    }
+
+    /// An empty slot has one use, so it is written at once; a slot with a state
+    /// in it gets the sheet.
+    fn pick_state(&mut self, pick: RowPick) -> Option<UiCmd> {
+        match pick {
+            RowPick::Create(slot) => Some(UiCmd::SaveState(slot)),
+            RowPick::Open(slot) => {
+                self.screen = Screen::StateActions(slot);
+                self.actions = GridFocus::default();
+
+                None
+            }
+        }
+    }
+
+    /// Renaming moves on to its own screen; every other action is done with the
+    /// sheet and hands the platform its command.
+    fn act_on_slot(
+        &mut self,
+        action: states::SlotAction,
+        slot: usize,
+        views: &Views<'_>,
+    ) -> Option<UiCmd> {
+        if action == states::SlotAction::Rename {
+            self.rename.start(states::slot_name(views.states, slot));
+            self.screen = Screen::StateRename(slot);
+
+            return None;
+        }
+
+        self.screen = Screen::States;
+
+        states::action_cmd(action, slot)
     }
 
     /// Left/Right step the focused row's value instead of moving the highlight.
@@ -122,29 +224,58 @@ impl Menu {
         }
     }
 
-    pub fn show(
-        &mut self,
-        root: &mut egui::Ui,
-        library_view: &LibraryView,
-        settings_view: &SettingsView,
-        out: &mut Vec<UiCmd>,
-    ) {
+    pub fn show(&mut self, root: &mut egui::Ui, views: &Views<'_>, out: &mut Vec<UiCmd>) {
         match self.screen {
             Screen::Library => {
-                if library(root, library_view, &mut self.library, out) {
+                if library(root, &views.library, &mut self.library, out) {
                     self.screen = Screen::Settings;
                 }
             }
             Screen::Pause => self.pause_overlay(root, out),
-            Screen::Settings => settings(root, settings_view, &mut self.settings, out),
+            Screen::Settings => settings(root, views.settings, &mut self.settings, out),
+            Screen::States => {
+                let picked = states::show(root, views.states, &mut self.states, &mut self.shots);
+
+                if let Some(pick) = picked {
+                    out.extend(self.pick_state(pick));
+                }
+            }
+            Screen::StateActions(slot) => {
+                let picked = states::show_actions(
+                    root,
+                    views.states,
+                    slot,
+                    &mut self.actions,
+                    &mut self.shots,
+                );
+
+                if let Some(action) = picked {
+                    out.extend(self.act_on_slot(action, slot, views));
+                }
+            }
+            Screen::StateRename(slot) => match states::show_rename(root, slot, &mut self.rename) {
+                Some(states::RenameEvent::Commit) => {
+                    self.screen = Screen::States;
+                    out.push(UiCmd::RenameState(slot, self.rename.take_text()));
+                }
+                Some(states::RenameEvent::Cancel) => self.screen = Screen::StateActions(slot),
+                None => {}
+            },
         }
     }
 
     fn activate_pause(&mut self, index: usize) -> Option<UiCmd> {
-        match index {
-            PAUSE_LIBRARY => self.screen = Screen::Library,
-            PAUSE_SETTINGS => self.screen = Screen::Settings,
-            _ => return PAUSE_ITEMS.get(index).map(|(_, cmd)| *cmd),
+        match &PAUSE_ITEMS.get(index)?.1 {
+            PauseAction::Cmd(cmd) => return Some(cmd.clone()),
+            PauseAction::Open(screen) => {
+                self.screen = *screen;
+
+                // The slot list is about what is on disk now, so it opens at the
+                // top rather than wherever it was left.
+                if *screen == Screen::States {
+                    self.states = GridFocus::default();
+                }
+            }
         }
 
         None
@@ -152,36 +283,16 @@ impl Menu {
 
     fn pause_overlay(&mut self, root: &mut egui::Ui, out: &mut Vec<UiCmd>) {
         self.pause.sync(PAUSE_ITEMS.len(), 1);
-        let screen = root.ctx().content_rect();
-        root.painter().rect_filled(screen, 0.0, OVERLAY_DIM);
+        let size = Vec2::new(OVERLAY_WIDTH, overlay::rows_height(PAUSE_ITEMS.len()));
+        let pause = &mut self.pause;
+        let mut clicked = None;
 
-        // Sized here rather than left to egui: an auto-sized panel takes a second
-        // layout pass to settle, and both passes land on screen as a ghosted
-        // double image.
-        let height = PAUSE_ITEMS.len() as f32 * (ROW_HEIGHT + ROW_GAP) + ROW_GAP;
-        let panel = Rect::from_center_size(screen.center(), Vec2::new(OVERLAY_WIDTH, height));
-        let mut ui = root.new_child(
-            UiBuilder::new()
-                .max_rect(panel)
-                .layout(Layout::top_down(Align::Center)),
-        );
-
-        Frame::popup(ui.style()).show(&mut ui, |ui| {
-            ui.spacing_mut().item_spacing.y = ROW_GAP;
-
-            for (index, (label, _)) in PAUSE_ITEMS.iter().enumerate() {
-                let focused = self.pause.is_focused(index);
-                let row = egui::Button::selectable(focused, *label);
-                let response = ui.add_sized([ui.available_width(), ROW_HEIGHT], row);
-
-                if response.hovered() {
-                    self.pause.focus(index);
-                }
-
-                if response.clicked() {
-                    out.extend(self.activate_pause(index));
-                }
-            }
+        overlay::popup(root, size, |ui| {
+            clicked = overlay::rows(ui, PAUSE_ITEMS.iter().map(|(label, _)| *label), pause);
         });
+
+        if let Some(index) = clicked {
+            out.extend(self.activate_pause(index));
+        }
     }
 }

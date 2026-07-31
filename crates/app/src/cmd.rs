@@ -17,6 +17,10 @@ pub enum AppCmd {
     RestartRom,
     ChangeMode(RunMode),
     SaveState(SaveStateCmd, Option<usize>),
+    /// Throws away the state file of the loaded game's slot.
+    DeleteState(usize),
+    /// Names the state in the loaded game's slot; an empty name clears it.
+    RenameState(usize, String),
     SelectRom,
     Quit,
     ChangeConfig(ChangeConfigCmd),
@@ -43,6 +47,8 @@ impl AppCmd {
             AppCmd::RestartRom => "Restart ROM",
             AppCmd::ChangeMode(m) => m.name(),
             AppCmd::SaveState(m, _) => m.name(),
+            AppCmd::DeleteState(_) => "Delete State",
+            AppCmd::RenameState(_, _) => "Rename State",
             AppCmd::SelectRom => "Select ROM",
             AppCmd::Quit => "Quit",
             AppCmd::ChangeConfig(conf) => conf.name(),

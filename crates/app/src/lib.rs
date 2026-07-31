@@ -34,6 +34,8 @@ pub mod input;
 pub mod notification;
 pub mod palette;
 pub mod roms;
+pub mod state_meta;
+pub mod state_shot;
 pub mod video;
 
 pub fn is_zip(path: &Path) -> bool {
@@ -224,6 +226,12 @@ impl AppConfigFile {
         let decoded: EmuSaveState = postcard::from_bytes(&buffer).map_err(|e| e.to_string())?;
 
         Ok(decoded)
+    }
+
+    pub fn delete_save_state_file(name: &str, suffix: &str) -> Result<(), String> {
+        let path = Self::get_save_state_path(name, suffix);
+
+        fs::remove_file(path).map_err(|e| e.to_string())
     }
 
     pub fn get_save_state_path(game_name: &str, suffix: &str) -> PathBuf {
