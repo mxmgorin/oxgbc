@@ -15,7 +15,10 @@ pub struct RomEntry {
 }
 
 const TILE_WIDTH: f32 = 132.0;
-const GAP: f32 = 10.0;
+/// Smallest gap between carts; the shelf widens it to use up the row's slack,
+/// but never past `MAX_GAP_TILES` of a cart's width.
+const MIN_GAP: f32 = 14.0;
+const MAX_GAP_TILES: f32 = 0.5;
 const FOCUS_SCALE: f32 = 1.08;
 /// Room the focus ring needs outside the cart, as a fraction of its width.
 const RING: f32 = 0.06;
@@ -25,7 +28,7 @@ const RING: f32 = 0.06;
 pub fn library(root: &mut Ui, view: &LibraryView, focus: &mut GridFocus) {
     egui::CentralPanel::default().show(root, |ui| {
         ui.heading("Library");
-        ui.add_space(GAP * 0.5);
+        ui.add_space(MIN_GAP * 0.5);
 
         if view.entries.is_empty() {
             ui.label("No ROMs yet.");
@@ -42,12 +45,26 @@ fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus) {
     // Every cell reserves what the focused cart needs, so growing one never
     // overflows the row — at the panel's edges that overflow is clipped away.
     let cell = tile * FOCUS_SCALE + Vec2::splat(TILE_WIDTH * RING * 2.0);
-    let columns = (((ui.available_width() + GAP) / (cell.x + GAP)).floor() as usize).max(1);
+    let shelf_width = ui.available_width();
+    let fit = (((shelf_width + MIN_GAP) / (cell.x + MIN_GAP)).floor() as usize).max(1);
+    // A library smaller than one row still spreads across the shelf, so the row is
+    // as wide as it can be before the slack is shared out.
+    let columns = fit.min(view.entries.len()).max(1);
+    // Space-evenly: the same gap at both ends as between the carts, until it grows
+    // wider than half a cart and the shelf would just look sparse.
+    let gap = ((shelf_width - columns as f32 * cell.x) / (columns + 1) as f32)
+        .clamp(MIN_GAP, TILE_WIDTH * MAX_GAP_TILES);
+    // Every row starts at the same offset — one computed from a *full* row — so
+    // columns line up and a short last row trails off into empty space instead of
+    // sitting between its neighbours.
+    let full_width = columns as f32 * cell.x + (columns + 1) as f32 * gap;
+    let leading = (shelf_width - full_width) * 0.5 + gap;
     focus.sync(view.entries.len(), columns);
 
     for (row, entries) in view.entries.chunks(columns).enumerate() {
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = GAP;
+            ui.add_space(leading);
+            ui.spacing_mut().item_spacing.x = gap;
 
             for (column, entry) in entries.iter().enumerate() {
                 let index = row * columns + column;
@@ -65,6 +82,6 @@ fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus) {
                 cart::paint(ui, cart, &entry.title, entry.kind, focused);
             }
         });
-        ui.add_space(GAP);
+        ui.add_space(MIN_GAP);
     }
 }
