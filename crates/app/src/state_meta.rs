@@ -30,6 +30,9 @@ pub struct StateMeta {
     pub saved_at: u64,
     #[serde(default)]
     pub cart: CartId,
+    /// Wall-clock seconds played by the time this state was written.
+    #[serde(default)]
+    pub playtime_secs: u64,
 }
 
 /// Enough of the cartridge to tell whether a state belongs to the loaded ROM.
@@ -53,11 +56,12 @@ impl CartId {
 impl StateMeta {
     /// `name` is passed in rather than taken from the cart: overwriting a slot
     /// keeps whatever it was already called.
-    pub fn new(cart: &Cart, name: String) -> Self {
+    pub fn new(cart: &Cart, name: String, playtime_secs: u64) -> Self {
         Self {
             name,
             saved_at: now_secs(),
             cart: CartId::of(cart),
+            playtime_secs,
         }
     }
 

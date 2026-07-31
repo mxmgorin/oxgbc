@@ -44,6 +44,7 @@ pub fn view<FS: PlatformFileSystem>(ctx: &FrontendCtx<'_, FS>, version: u64) -> 
             slot,
             name: meta.name,
             saved,
+            played: played(meta.playtime_secs),
             // A few KB per slot, unlike the state itself; states written before
             // shots existed have none, and `load_shot` fills those in on demand.
             shot: StateShot::load_file(&name, &suffix).ok().map(into_ui_shot),
@@ -104,6 +105,18 @@ fn written_at(game: &str, slot: usize) -> Option<SystemTime> {
     path.metadata().ok()?.modified().ok()
 }
 
+/// How long the game had been played when the state was written. Empty until
+/// there is a minute of it, so a fresh game's states aren't captioned "0 min".
+fn played(secs: u64) -> String {
+    if secs < MINUTE {
+        String::new()
+    } else if secs < HOUR {
+        format!("{} min played", secs / MINUTE)
+    } else {
+        format!("{} h {} min played", secs / HOUR, secs % HOUR / MINUTE)
+    }
+}
+
 /// Coarsest unit that still says something: the list is for telling two states
 /// apart, not for reading a clock off.
 fn age(now: SystemTime, written: SystemTime) -> String {
@@ -146,6 +159,17 @@ mod tests {
         assert_eq!(age_after(DAY - 1), "23 h ago");
         assert_eq!(age_after(DAY), "1 d ago");
         assert_eq!(age_after(DAY * 30), "30 d ago");
+    }
+
+    #[test]
+    fn play_time_is_said_in_minutes_and_hours() {
+        assert_eq!(played(0), "");
+        assert_eq!(played(MINUTE - 1), "");
+        assert_eq!(played(MINUTE), "1 min played");
+        assert_eq!(played(HOUR - 1), "59 min played");
+        assert_eq!(played(HOUR), "1 h 0 min played");
+        assert_eq!(played(HOUR * 2 + MINUTE * 14), "2 h 14 min played");
+        assert_eq!(played(DAY), "24 h 0 min played");
     }
 
     #[test]

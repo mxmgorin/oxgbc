@@ -1,7 +1,7 @@
 use crate::{get_base_dir, PlatformFileSystem};
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -10,9 +10,21 @@ pub struct RomsState {
     pub selected_dir_path: Option<PathBuf>,
     opened_rom_paths: IndexSet<PathBuf>,
     loaded_rom_files: HashSet<String>,
+    /// Wall-clock seconds played, by file name rather than path — the same key
+    /// battery saves and states go by, so moving a ROM keeps its history.
+    #[serde(default)]
+    playtime_secs: HashMap<String, u64>,
 }
 
 impl RomsState {
+    pub fn add_playtime(&mut self, game: &str, secs: u64) {
+        *self.playtime_secs.entry(game.to_owned()).or_default() += secs;
+    }
+
+    pub fn playtime(&self, game: &str) -> u64 {
+        self.playtime_secs.get(game).copied().unwrap_or_default()
+    }
+
     pub fn opened_count(&self) -> usize {
         self.opened_rom_paths.len()
     }

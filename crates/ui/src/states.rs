@@ -31,6 +31,10 @@ pub struct StateSlot {
     pub name: String,
     /// Platform-formatted age of the state, e.g. `"3 min ago"`.
     pub saved: String,
+    /// Platform-formatted play time behind it, e.g. `"2 h 14 min played"`; empty
+    /// when there is not enough of it to be worth saying. Shown on the sheet only,
+    /// where there is room for a second line.
+    pub played: String,
     /// The screen this state was saved with, when the platform had one to hand.
     pub shot: Option<StateShot>,
 }
@@ -319,8 +323,10 @@ pub fn show_actions(
     let state = slot_state(view, slot);
     let shot = state.and_then(|state| state.shot.as_ref());
     let preview = shot.map(|shot| shot_size(root.ctx().content_rect().size(), shot));
-    // Title plus, when the slot was found, the line of detail under it.
-    let titles = 1 + usize::from(state.is_some());
+    // Title, plus a line of detail for a slot that was found and another for the
+    // play time behind it.
+    let played = state.map_or("", |state| state.played.as_str());
+    let titles = 1 + usize::from(state.is_some()) + usize::from(!played.is_empty());
     let height = TITLE_HEIGHT * titles as f32
         + preview.map_or(0.0, |size| size.y + ROW_GAP)
         + overlay::rows_height(action_count());
@@ -342,6 +348,10 @@ pub fn show_actions(
             None => {
                 ui.heading(format!("Slot {slot}"));
             }
+        }
+
+        if !played.is_empty() {
+            ui.weak(played);
         }
 
         if let (Some(shot), Some(size)) = (shot, preview) {
@@ -432,12 +442,14 @@ mod tests {
                     slot: 0,
                     name: String::new(),
                     saved: "2 min ago".to_owned(),
+                    played: String::new(),
                     shot: None,
                 },
                 StateSlot {
                     slot: 3,
                     name: "before the boss".to_owned(),
                     saved: "1 d ago".to_owned(),
+                    played: "2 h 14 min played".to_owned(),
                     shot: None,
                 },
             ],

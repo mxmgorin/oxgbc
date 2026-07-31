@@ -26,7 +26,7 @@ use sdl2::Sdl;
 use std::fmt::Write;
 use std::path::Path;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const AUTO_SAVE_STATE_SUFFIX: &str = "auto";
 
@@ -53,6 +53,8 @@ where
     pub notifications: Notifications,
     pub platform: AppPlatform<FS, FD>,
     pub roms: RomsState,
+    /// Play time not yet banked into `roms`, which happens a second at a time.
+    session_play: Duration,
 }
 
 impl<FS, FD> EmuAudioCallback for App<FS, FD>
@@ -121,6 +123,7 @@ where
             notifications,
             platform,
             roms,
+            session_play: Duration::ZERO,
         })
     }
 
@@ -135,7 +138,18 @@ where
         self.frontend
             .open(!emu.runtime.cpu.clock.bus.cart.is_empty());
 
+        let mut tick = Instant::now();
+
         loop {
+            // The interval that just ended counts as play if the game was running
+            // through it; a menu or a paused emulator does not.
+            let now = Instant::now();
+
+            if self.state == AppState::Running {
+                self.add_playtime(now - tick);
+            }
+
+            tick = now;
             input.handle_events(self, emu);
 
             match self.state {
@@ -349,9 +363,35 @@ where
         );
     }
 
+    /// Banked a whole second at a time: a frame's worth rounds to nothing, and the
+    /// name only has to be looked up when there is something to add.
+    fn add_playtime(&mut self, elapsed: Duration) {
+        self.session_play += elapsed;
+        let secs = self.session_play.as_secs();
+
+        if secs == 0 {
+            return;
+        }
+
+        self.session_play -= Duration::from_secs(secs);
+
+        if let Some(game) = self.game_name() {
+            self.roms.add_playtime(&game, secs);
+        }
+    }
+
+    /// File name of the loaded ROM, which is what every save beside it goes by.
+    fn game_name(&self) -> Option<String> {
+        self.roms
+            .get_last_path()
+            .and_then(|path| self.platform.fs.get_file_name(path))
+    }
+
     pub fn handle_save_state(&mut self, emu: &mut Emu, event: SaveStateCmd, index: Option<usize>) {
-        let path = self.roms.get_last_path().unwrap();
-        let name = self.platform.fs.get_file_name(path).unwrap();
+        let Some(name) = self.game_name() else {
+            log::error!("Failed save_state: no game loaded");
+            return;
+        };
 
         match event {
             SaveStateCmd::Create => {
@@ -367,7 +407,11 @@ where
                 let kept = StateMeta::load_file(&name, &index)
                     .map(|meta| meta.name)
                     .unwrap_or_default();
-                let meta = StateMeta::new(&emu.runtime.cpu.clock.bus.cart, kept);
+                let meta = StateMeta::new(
+                    &emu.runtime.cpu.clock.bus.cart,
+                    kept,
+                    self.roms.playtime(&name),
+                );
 
                 if let Err(err) = meta.save_file(&name, &index) {
                     log::warn!("Failed save state meta: {err}");
@@ -414,12 +458,7 @@ where
     }
 
     pub fn handle_delete_state(&mut self, index: usize) {
-        let name = self
-            .roms
-            .get_last_path()
-            .and_then(|path| self.platform.fs.get_file_name(path));
-
-        let Some(name) = name else {
+        let Some(name) = self.game_name() else {
             log::error!("Failed delete_state: no game loaded");
             return;
         };
@@ -447,12 +486,7 @@ where
 
     /// Touches only the sidecar: the state itself has no idea what it is called.
     pub fn handle_rename_state(&mut self, index: usize, name: String) {
-        let game = self
-            .roms
-            .get_last_path()
-            .and_then(|path| self.platform.fs.get_file_name(path));
-
-        let Some(game) = game else {
+        let Some(game) = self.game_name() else {
             log::error!("Failed rename_state: no game loaded");
             return;
         };
