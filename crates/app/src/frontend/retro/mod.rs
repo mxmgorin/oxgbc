@@ -55,6 +55,14 @@ impl Frontend for RetroFrontend {
         self.menu.request_update();
     }
 
+    /// The text menu always opens at its root, game or not.
+    fn open(&mut self, _has_game: bool) {}
+
+    /// Everything here is reached through `nav`, which returns its command.
+    fn take_cmd(&mut self) -> Option<AppCmd> {
+        None
+    }
+
     #[inline(always)]
     fn render(
         &mut self,

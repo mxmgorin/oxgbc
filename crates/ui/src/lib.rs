@@ -4,8 +4,10 @@
 
 pub mod cart;
 pub mod library;
+pub mod menu;
 pub mod nav;
 
 pub use cart::CartKind;
-pub use library::{library, LibraryView, RomEntry};
-pub use nav::{FocusEvent, GridFocus, NavAction};
+pub use library::{LibraryView, RomEntry};
+pub use menu::{Menu, UiCmd};
+pub use nav::NavAction;

@@ -1,6 +1,7 @@
 //! The library screen: the game collection as a shelf of cartridges.
 
 use crate::cart::{self, CartKind};
+use crate::menu::UiCmd;
 use crate::nav::GridFocus;
 use egui::{Rect, Sense, Ui, Vec2};
 
@@ -25,7 +26,7 @@ const RING: f32 = 0.06;
 
 /// Takes egui's root [`Ui`] (what panels are shown into), so the same screen
 /// works under any backend that can run egui.
-pub fn library(root: &mut Ui, view: &LibraryView, focus: &mut GridFocus) {
+pub fn library(root: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &mut Vec<UiCmd>) {
     egui::CentralPanel::default().show(root, |ui| {
         ui.heading("Library");
         ui.add_space(MIN_GAP * 0.5);
@@ -36,11 +37,11 @@ pub fn library(root: &mut Ui, view: &LibraryView, focus: &mut GridFocus) {
             return;
         }
 
-        egui::ScrollArea::vertical().show(ui, |ui| shelf(ui, view, focus));
+        egui::ScrollArea::vertical().show(ui, |ui| shelf(ui, view, focus, out));
     });
 }
 
-fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus) {
+fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &mut Vec<UiCmd>) {
     let tile = Vec2::new(TILE_WIDTH, TILE_WIDTH * cart::ASPECT);
     // Every cell reserves what the focused cart needs, so growing one never
     // overflows the row — at the panel's edges that overflow is clipped away.
@@ -75,6 +76,10 @@ fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus) {
                 // two never disagree about what is selected.
                 if response.hovered() {
                     focus.focus(index);
+                }
+
+                if response.clicked() {
+                    out.push(UiCmd::LaunchRom(index));
                 }
 
                 let size = if focused { tile * FOCUS_SCALE } else { tile };

@@ -153,6 +153,7 @@ impl InputHandler {
                     app.state = AppState::Running;
                 } else {
                     app.state = AppState::Paused;
+                    app.frontend.open(!emu.runtime.cpu.clock.bus.cart.is_empty());
                     app.frontend.request_update();
                 }
             }

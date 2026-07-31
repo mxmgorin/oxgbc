@@ -130,12 +130,22 @@ where
             self.state = AppState::Paused;
         }
 
+        self.frontend.open(!emu.runtime.cpu.clock.bus.cart.is_empty());
+
         loop {
             input.handle_events(self, emu);
 
             match self.state {
                 AppState::Quitting => break,
-                AppState::Paused => self.render_menu(emu),
+                AppState::Paused => {
+                    self.render_menu(emu);
+
+                    // Pointer input reaches the app only here: the UI collects it
+                    // while drawing and hands it over once the frame is done.
+                    while let Some(cmd) = self.frontend.take_cmd() {
+                        input.handle_cmd(self, emu, cmd);
+                    }
+                }
                 AppState::Running => self.render_frame(emu),
                 AppState::Stepping => continue,
             }

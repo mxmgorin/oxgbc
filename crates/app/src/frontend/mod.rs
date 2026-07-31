@@ -62,6 +62,14 @@ pub trait Frontend {
     /// Mark the UI dirty — app state it displays changed underneath it.
     fn request_update(&mut self);
 
+    /// Called when the UI opens; `has_game` decides whether it is a pause menu
+    /// over a running game or the app's home screen.
+    fn open(&mut self, has_game: bool);
+
+    /// Commands the last [`Self::render`] produced — pointer input has no other
+    /// way out, since rendering can't return through the UI toolkit.
+    fn take_cmd(&mut self) -> Option<AppCmd>;
+
     fn render(
         &mut self,
         video: &mut AppVideo,

@@ -1,6 +1,6 @@
-//! The egui frontend. Spike stage: the library screen from the `ui` crate over
-//! the paused game, driven by the same directional input as the retro menu. The
-//! remaining screens (pause overlay, settings) and cover art come later.
+//! The egui frontend: the `ui` crate's screens over the paused game. This side
+//! owns the platform half — building the view models from app state and turning
+//! the UI's requests back into [`AppCmd`]s.
 
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
@@ -10,7 +10,9 @@ use crate::roms::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
 use core::cart::header::{CartHeader, CgbFlag};
+use core::emu::state::SaveStateCmd;
 use core::ppu::framebuffer::FrameBuffer;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -21,9 +23,11 @@ const MAX_FRAME_DELAY: Duration = Duration::from_millis(30);
 
 #[derive(Default)]
 pub struct ModernFrontend {
-    focus: ui::GridFocus,
+    menu: ui::Menu,
     entries: Vec<ui::RomEntry>,
     paths: Vec<PathBuf>,
+    /// Filled by pointer input during `render`, drained by the app afterwards.
+    pending: VecDeque<AppCmd>,
     stale: bool,
     frame_delay: Duration,
 }
@@ -41,13 +45,9 @@ impl Frontend for ModernFrontend {
         action: NavAction,
         _ctx: FrontendCtx<'_, FS>,
     ) -> Option<AppCmd> {
-        match self.focus.nav(into_nav(action))? {
-            ui::FocusEvent::Activate(index) => {
-                Some(AppCmd::LoadFile(self.paths.get(index)?.clone()))
-            }
-            // Nothing to back out of until the library gains sub-screens.
-            ui::FocusEvent::Back => None,
-        }
+        let cmd = self.menu.nav(into_nav(action))?;
+
+        self.app_cmd(cmd)
     }
 
     fn capture_bind<I: BindableInput>(&mut self, _input: I, _pressed: bool) -> Option<AppCmd> {
@@ -56,6 +56,14 @@ impl Frontend for ModernFrontend {
 
     fn request_update(&mut self) {
         self.stale = true;
+    }
+
+    fn open(&mut self, has_game: bool) {
+        self.menu.open(has_game);
+    }
+
+    fn take_cmd(&mut self) -> Option<AppCmd> {
+        self.pending.pop_front()
     }
 
     fn render(
@@ -73,8 +81,15 @@ impl Frontend for ModernFrontend {
         let view = ui::LibraryView {
             entries: &self.entries,
         };
-        let focus = &mut self.focus;
-        video.render_egui(&mut |egui_ui| ui::library(egui_ui, &view, focus));
+        let menu = &mut self.menu;
+        let mut cmds = Vec::new();
+        video.render_egui(&mut |egui_ui| menu.show(egui_ui, &view, &mut cmds));
+
+        for cmd in cmds {
+            if let Some(cmd) = self.app_cmd(cmd) {
+                self.pending.push_back(cmd);
+            }
+        }
 
         self.frame_delay = video.egui_repaint_delay().min(MAX_FRAME_DELAY);
     }
@@ -96,6 +111,17 @@ impl ModernFrontend {
             })
             .collect();
         self.stale = false;
+    }
+
+    fn app_cmd(&self, cmd: ui::UiCmd) -> Option<AppCmd> {
+        Some(match cmd {
+            ui::UiCmd::LaunchRom(index) => AppCmd::LoadFile(self.paths.get(index)?.clone()),
+            ui::UiCmd::Resume => AppCmd::ToggleMenu,
+            ui::UiCmd::SaveState => AppCmd::SaveState(SaveStateCmd::Create, None),
+            ui::UiCmd::LoadState => AppCmd::SaveState(SaveStateCmd::Load, None),
+            ui::UiCmd::RestartRom => AppCmd::RestartRom,
+            ui::UiCmd::Quit => AppCmd::Quit,
+        })
     }
 }
 
