@@ -52,14 +52,13 @@ pub struct ModernFrontend {
 }
 
 impl Frontend for ModernFrontend {
-    fn new(roms: &RomsState) -> Self {
-        let mut obj = Self {
+    /// The library is left for the first refresh to build: it needs the platform's
+    /// filesystem, which only a [`FrontendCtx`] carries.
+    fn new(_roms: &RomsState) -> Self {
+        Self {
             stale: true,
             ..Default::default()
-        };
-        obj.load_library(roms);
-
-        obj
+        }
     }
 
     fn nav<FS: PlatformFileSystem>(
@@ -146,7 +145,7 @@ impl ModernFrontend {
             return;
         }
 
-        self.load_library(ctx.roms);
+        self.load_library(ctx);
         self.settings = settings::view(ctx.config, ctx.palettes);
         self.loaded = ctx.roms.get_last_path().cloned();
         self.version += 1;
@@ -200,8 +199,21 @@ impl ModernFrontend {
         }
     }
 
-    fn load_library(&mut self, roms: &RomsState) {
-        self.paths = roms.iter_opened().cloned().collect();
+    /// The shelf is what has been played plus whatever else is in the chosen ROMs
+    /// directory: played first and most recent leading, then the rest by name, so
+    /// the order is the same on every run — the scan itself is unordered.
+    fn load_library<FS: PlatformFileSystem>(&mut self, ctx: &FrontendCtx<'_, FS>) {
+        self.paths = ctx.roms.iter_opened().cloned().collect();
+        let mut unplayed: Vec<PathBuf> = ctx
+            .roms
+            .iter_loaded(ctx.fs)
+            .into_iter()
+            .flatten()
+            .filter(|path| !self.paths.contains(path))
+            .collect();
+        unplayed.sort_by_key(|path| path.file_name().map(|name| name.to_ascii_lowercase()));
+        self.paths.append(&mut unplayed);
+
         self.entries = self
             .paths
             .iter()
@@ -229,6 +241,7 @@ impl ModernFrontend {
             ui::UiCmd::RenameRom(index, name) => {
                 AppCmd::RenameRom(self.paths.get(index)?.clone(), name)
             }
+            ui::UiCmd::AddRom => AppCmd::SelectRom,
             ui::UiCmd::SetRomCover(index) => AppCmd::SetRomCover(self.paths.get(index)?.clone()),
             ui::UiCmd::RemoveRomCover(index) => {
                 AppCmd::RemoveRomCover(self.paths.get(index)?.clone())

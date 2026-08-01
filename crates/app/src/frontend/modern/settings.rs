@@ -35,7 +35,8 @@ const FRAME_SKIP: SettingId = 19;
 const SPIN_DURATION: SettingId = 20;
 const TILE_WINDOW: SettingId = 21;
 const RESET_CONFIG: SettingId = 22;
-const CHANNEL: SettingId = 23;
+const ROMS_DIR: SettingId = 23;
+const CHANNEL: SettingId = 24;
 
 /// One press worth of change, matching what the text menu applies.
 const VOLUME_STEP: f32 = 0.05;
@@ -110,6 +111,11 @@ pub fn view(config: &AppConfig, palettes: &[LcdPalette]) -> SettingsView {
                     ),
                     toggle(TILE_WINDOW, "Tile window", interface.show_tiles),
                     Row {
+                        id: ROMS_DIR,
+                        label: "ROMs directory".to_owned(),
+                        control: Control::Action,
+                    },
+                    Row {
                         id: RESET_CONFIG,
                         label: "Reset config".to_owned(),
                         control: Control::Action,
@@ -148,6 +154,8 @@ pub fn apply(id: SettingId, step: i8, config: &AppConfig) -> Option<AppCmd> {
         SPIN_DURATION => ChangeConfigCmd::SpinDuration(signed(SPIN_STEP_MS, up)),
         TILE_WINDOW => ChangeConfigCmd::TileWindow,
         RESET_CONFIG => ChangeConfigCmd::Reset,
+        // Not a config change: it opens a folder chooser and rescans.
+        ROMS_DIR => return Some(AppCmd::SelectRomsDir),
         _ => ChangeConfigCmd::ToggleChannel((id - CHANNEL) as u8),
     };
 

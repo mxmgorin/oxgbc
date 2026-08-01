@@ -201,6 +201,8 @@ impl InputHandler {
                         return;
                     };
 
+                    // The shelf lists this directory now, so it has to be rebuilt.
+                    app.frontend.request_update();
                     app.notifications.add(format!("Found {count} ROMs"));
                 }
             }

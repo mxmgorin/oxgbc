@@ -5,7 +5,7 @@
 //! act on comes back as a [`UiCmd`].
 
 use crate::cover::{self, CoverAction, CoverOffer};
-use crate::library::{self, library, LibraryView};
+use crate::library::{self, library, LibraryEvent, LibraryView};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
@@ -29,6 +29,8 @@ pub enum UiCmd {
     RenameState(usize, String),
     /// Call this cartridge something; an empty name goes back to its file name.
     RenameRom(usize, String),
+    /// Ask for a game to be picked off the disk and added to the shelf.
+    AddRom,
     /// Ask for a cover picture for this cartridge.
     SetRomCover(usize),
     /// Take this cartridge's cover away.
@@ -443,9 +445,12 @@ impl Menu {
         match self.screen {
             Screen::Library => {
                 let covers = &mut self.covers;
+                let asked = library(root, &views.library, &mut self.library, covers, out);
 
-                if library(root, &views.library, &mut self.library, covers, out) {
-                    self.screen = Screen::Settings;
+                match asked {
+                    Some(LibraryEvent::OpenSettings) => self.screen = Screen::Settings,
+                    Some(LibraryEvent::AddRom) => out.push(UiCmd::AddRom),
+                    None => {}
                 }
             }
             Screen::Pause => self.pause_overlay(root, out),

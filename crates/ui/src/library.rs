@@ -56,6 +56,7 @@ pub fn show_actions(root: &mut Ui, title: &str, focus: &mut GridFocus) -> Option
     clicked.and_then(action_at)
 }
 
+const ICON_SIZE: f32 = 18.0;
 const TILE_WIDTH: f32 = 132.0;
 /// Smallest gap between carts; the shelf widens it to use up the row's slack,
 /// but never past `MAX_GAP_TILES` of a cart's width.
@@ -65,24 +66,40 @@ const FOCUS_SCALE: f32 = 1.08;
 /// Room the focus ring needs outside the cart, as a fraction of its width.
 const RING: f32 = 0.06;
 
+/// What the header's buttons asked for. Both are pointer-only — the shelf's focus
+/// walks carts, not chrome — so a gamepad reaches the same things through the pause
+/// overlay and the settings page.
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum LibraryEvent {
+    OpenSettings,
+    AddRom,
+}
+
 /// Takes egui's root [`Ui`] (what panels are shown into), so the same screen
-/// works under any backend that can run egui. Returns whether the settings
-/// button was pressed — that switches screen, which is the menu's business.
+/// works under any backend that can run egui. Returns what the header asked for —
+/// switching screen is the menu's business, not this one's.
 pub fn library(
     root: &mut Ui,
     view: &LibraryView,
     focus: &mut GridFocus,
     covers: &mut TextureCache,
     out: &mut Vec<UiCmd>,
-) -> bool {
-    let mut open_settings = false;
+) -> Option<LibraryEvent> {
+    let mut event = None;
     covers.sync(view.version);
 
     egui::CentralPanel::default().show(root, |ui| {
         ui.horizontal(|ui| {
             ui.heading("Library");
+            // Right to left, so the first one added sits furthest right.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                open_settings = ui.button("Settings").clicked();
+                if icon_button(ui, "\u{2699}", "Settings") {
+                    event = Some(LibraryEvent::OpenSettings);
+                }
+
+                if icon_button(ui, "\u{2795}", "Add game…") {
+                    event = Some(LibraryEvent::AddRom);
+                }
             });
         });
         ui.add_space(MIN_GAP * 0.5);
@@ -96,7 +113,15 @@ pub fn library(
         egui::ScrollArea::vertical().show(ui, |ui| shelf(ui, view, focus, covers, out));
     });
 
-    open_settings
+    event
+}
+
+/// The glyph carries the meaning, so the words go in the tooltip. Both icons come
+/// from the font egui ships with — this crate has no assets of its own.
+fn icon_button(ui: &mut Ui, glyph: &str, hint: &str) -> bool {
+    let icon = egui::RichText::new(glyph).size(ICON_SIZE);
+
+    ui.button(icon).on_hover_text(hint).clicked()
 }
 
 fn shelf(
