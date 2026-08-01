@@ -169,6 +169,9 @@ impl InputHandler {
             AppCmd::DeleteState(index) => app.handle_delete_state(index),
             AppCmd::RenameState(index, name) => app.handle_rename_state(index, name),
             AppCmd::RenameRom(path, name) => app.handle_rename_rom(&path, name),
+            AppCmd::SetRomCover(path) => app.handle_set_rom_cover(&path),
+            AppCmd::RemoveRomCover(path) => app.handle_remove_rom_cover(&path),
+            AppCmd::SetCoverFromState(path, index) => app.handle_cover_from_state(&path, index),
             AppCmd::SelectRom => {
                 if app.state == AppState::Paused {
                     if let Some(path) = app.platform.fd.select_file(

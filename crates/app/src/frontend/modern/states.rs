@@ -2,10 +2,11 @@
 //! nothing but a state file named after its index, so the disk is the only
 //! record of which slots are taken.
 
-use crate::config::{AppConfig, RenderConfig};
+use crate::config::AppConfig;
 use crate::frontend::FrontendCtx;
+use crate::image_file::RgbImage;
 use crate::state_meta::StateMeta;
-use crate::state_shot::StateShot;
+use crate::state_shot;
 use crate::AppConfigFile;
 use crate::PlatformFileSystem;
 use std::time::SystemTime;
@@ -25,19 +26,33 @@ pub fn view<FS: PlatformFileSystem>(ctx: &FrontendCtx<'_, FS>, version: u64) -> 
         };
     };
 
+    view_for(&name, version)
+}
+
+/// The slots a cover can be taken from: every state the game has, and no free slot,
+/// since writing one is not among the things being picked between. States with no
+/// shot beside them are still offered — their screen is inside the state itself.
+pub fn choices_for(name: &str, version: u64) -> ui::StatesView {
+    ui::StatesView {
+        free: None,
+        ..view_for(name, version)
+    }
+}
+
+pub fn view_for(name: &str, version: u64) -> ui::StatesView {
     let now = SystemTime::now();
     let mut slots = Vec::new();
     let mut free = None;
 
     for slot in 0..=AppConfig::MAX_SAVE_SLOT {
-        let Some(mtime) = written_at(&name, slot) else {
+        let Some(mtime) = written_at(name, slot) else {
             free = free.or(Some(slot));
             continue;
         };
 
         // Only occupied slots are worth a sidecar read, and there are few of them.
         let suffix = slot.to_string();
-        let meta = StateMeta::load_file(&name, &suffix).unwrap_or_default();
+        let meta = StateMeta::load_file(name, &suffix).unwrap_or_default();
         let saved = age(now, meta.written_at().unwrap_or(mtime));
 
         slots.push(ui::StateSlot {
@@ -47,7 +62,7 @@ pub fn view<FS: PlatformFileSystem>(ctx: &FrontendCtx<'_, FS>, version: u64) -> 
             played: played(meta.playtime_secs),
             // A few KB per slot, unlike the state itself; states written before
             // shots existed have none, and `load_shot` fills those in on demand.
-            shot: StateShot::load_file(&name, &suffix).ok().map(into_ui_shot),
+            shot: state_shot::load(name, &suffix).ok().map(into_ui_shot),
         });
     }
 
@@ -58,34 +73,26 @@ pub fn view<FS: PlatformFileSystem>(ctx: &FrontendCtx<'_, FS>, version: u64) -> 
     }
 }
 
-/// The screen of a state written before shots were saved beside them. It is still
-/// in the state file — `Lcd::buffer` is serialized along with the rest of the PPU
-/// — but only behind a decode of the whole thing, so this runs for one slot at a
-/// time, when its sheet opens.
+/// The screen of a state written before shots were saved beside them, read out of
+/// the state file itself — a whole decode, so this runs for one slot at a time,
+/// when its sheet opens.
 pub fn load_shot<FS: PlatformFileSystem>(
     ctx: &FrontendCtx<'_, FS>,
     slot: usize,
-) -> Option<ui::StateShot> {
+) -> Option<ui::RgbImage> {
     let name = game_name(ctx)?;
-    let state = AppConfigFile::read_save_state_file(&name, &slot.to_string());
 
-    let state = match state {
-        Ok(state) => state,
+    match state_shot::load_from_state(&name, &slot.to_string()) {
+        Ok(shot) => Some(into_ui_shot(shot)),
         Err(err) => {
             log::warn!("Failed load state shot: {err}");
-            return None;
+            None
         }
-    };
-
-    Some(ui::StateShot {
-        rgb: state.cpu.clock.bus.io.ppu.lcd.buffer.rgb888(),
-        width: RenderConfig::WIDTH,
-        height: RenderConfig::HEIGHT,
-    })
+    }
 }
 
-fn into_ui_shot(shot: StateShot) -> ui::StateShot {
-    ui::StateShot {
+fn into_ui_shot(shot: RgbImage) -> ui::RgbImage {
+    ui::RgbImage {
         rgb: shot.rgb,
         width: shot.width as usize,
         height: shot.height as usize,

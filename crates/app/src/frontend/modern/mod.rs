@@ -9,6 +9,7 @@ use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::frontend::{Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
+use crate::rom_cover;
 use crate::rom_meta::RomMeta;
 use crate::roms::RomsState;
 use crate::video::AppVideo;
@@ -35,6 +36,13 @@ pub struct ModernFrontend {
     /// Slot whose screen was read out of its state file, to keep it off the disk
     /// while the sheet stays put.
     shot_slot: Option<usize>,
+    /// The save states of the cart whose cover is being worked on; read only while
+    /// one of those screens is open.
+    rom_states: ui::StatesView,
+    /// Cart the states above belong to, so they are read once per cart.
+    cover_rom: Option<usize>,
+    /// Path of the loaded game, for the commands that name no cart of their own.
+    loaded: Option<PathBuf>,
     /// Bumped for every rebuild, so the UI can tell one view from the next.
     version: u64,
     /// Filled by pointer input during `render`, drained by the app afterwards.
@@ -65,9 +73,11 @@ impl Frontend for ModernFrontend {
         let views = ui::Views {
             library: ui::LibraryView {
                 entries: &self.entries,
+                version: self.version,
             },
             settings: &self.settings,
             states: &self.states,
+            rom_states: &self.rom_states,
         };
         let cmd = self.menu.nav(into_nav(action), &views)?;
 
@@ -98,14 +108,17 @@ impl Frontend for ModernFrontend {
     ) {
         self.refresh(&ctx);
         self.refresh_shot(&ctx);
+        self.refresh_cover_states();
         video.draw_menu(fb);
 
         let views = ui::Views {
             library: ui::LibraryView {
                 entries: &self.entries,
+                version: self.version,
             },
             settings: &self.settings,
             states: &self.states,
+            rom_states: &self.rom_states,
         };
         let menu = &mut self.menu;
         let mut cmds = Vec::new();
@@ -135,11 +148,33 @@ impl ModernFrontend {
 
         self.load_library(ctx.roms);
         self.settings = settings::view(ctx.config, ctx.palettes);
+        self.loaded = ctx.roms.get_last_path().cloned();
         self.version += 1;
         self.states = states::view(ctx, self.version);
-        // The rebuilt view dropped the screen read for the open slot with it.
+        // The rebuilt views dropped the screens read into them.
         self.shot_slot = None;
+        self.cover_rom = None;
         self.stale = false;
+    }
+
+    /// Reads a cart's save states when a cover screen moves to another cart: it is
+    /// a stat per slot, and those screens outlive many frames.
+    fn refresh_cover_states(&mut self) {
+        let open = self.menu.open_cover_rom();
+
+        if open == self.cover_rom {
+            return;
+        }
+
+        self.cover_rom = open;
+        // A new build of this view even though nothing else changed, so the picker's
+        // textures have to go: another cart's slot 0 is not this one's.
+        self.version += 1;
+        self.rom_states = open
+            .and_then(|index| self.paths.get(index))
+            .and_then(|path| path.file_name())
+            .map(|name| states::choices_for(&name.to_string_lossy(), self.version))
+            .unwrap_or_default();
     }
 
     /// Fills in the open slot's screen when the slot has no shot of its own, which
@@ -176,6 +211,7 @@ impl ModernFrontend {
                 ui::RomEntry {
                     title: title_of(path, &meta),
                     kind: kind_of(meta.cgb),
+                    cover: cover_of(path),
                 }
             })
             .collect();
@@ -193,6 +229,20 @@ impl ModernFrontend {
             ui::UiCmd::RenameRom(index, name) => {
                 AppCmd::RenameRom(self.paths.get(index)?.clone(), name)
             }
+            ui::UiCmd::SetRomCover(index) => AppCmd::SetRomCover(self.paths.get(index)?.clone()),
+            ui::UiCmd::RemoveRomCover(index) => {
+                AppCmd::RemoveRomCover(self.paths.get(index)?.clone())
+            }
+            // No cart index means the slot sheet asked, which is about the game
+            // being played.
+            ui::UiCmd::SetCoverFromState { rom, slot } => {
+                let path = match rom {
+                    Some(index) => self.paths.get(index)?,
+                    None => self.loaded.as_ref()?,
+                };
+
+                AppCmd::SetCoverFromState(path.clone(), slot)
+            }
             ui::UiCmd::RestartRom => AppCmd::RestartRom,
             ui::UiCmd::Quit => AppCmd::Quit,
         })
@@ -208,6 +258,18 @@ fn rom_meta(path: &Path) -> RomMeta {
     };
 
     RomMeta::load_or_create(path, &name)
+}
+
+/// A few KB of PNG per cart, read while the shelf is built; most games have none.
+fn cover_of(path: &Path) -> Option<ui::RgbImage> {
+    let name = path.file_name()?.to_string_lossy();
+    let cover = rom_cover::load(&name).ok()?;
+
+    Some(ui::RgbImage {
+        rgb: cover.rgb,
+        width: cover.width as usize,
+        height: cover.height as usize,
+    })
 }
 
 /// The user's name for the cart, or the file's own when it has none.

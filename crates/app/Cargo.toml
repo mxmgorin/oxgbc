@@ -25,8 +25,12 @@ log = "0.4.27"
 indexmap = { version = "2.10.0", features = ["serde"] }
 arrayvec = "0.7.6"
 zip = "8.2.0"
-# Save-state thumbnails; a Game Boy screen packs into a few KB.
-image = { version = "0.25.9", default-features = false, features = ["png"] }
+# Save-state thumbnails and cartridge covers. PNG is what we write; JPEG is what
+# a cover picked off the disk often is.
+image = { version = "0.25.9", default-features = false, features = [
+    "png",
+    "jpeg",
+] }
 # `egui` and `glow` come through this dep, so their versions can't drift.
 egui-sdl2 = { version = "0.7", default-features = false, features = [
     "glow-backend",

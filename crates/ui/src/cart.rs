@@ -7,7 +7,7 @@
 //! for CGB-only ones.
 
 use egui::text::LayoutJob;
-use egui::{Align, Color32, FontId, Pos2, Rect, Shape, Stroke, Ui, Vec2};
+use egui::{Align, Color32, FontId, Pos2, Rect, Shape, Stroke, TextureHandle, Ui, Vec2};
 
 /// Taller than wide, like the real cart.
 pub const ASPECT: f32 = 1.17;
@@ -60,6 +60,8 @@ const RECESS_INSET: f32 = 0.10;
 const RECESS_TOP: f32 = 0.30;
 const RECESS_BOTTOM: f32 = 1.02;
 const LABEL_MARGIN: f32 = 0.022;
+/// White paper left showing around cover art, as a fraction of the cart's width.
+const LABEL_ART_MARGIN: f32 = 0.012;
 const ARROW_HALF_WIDTH: f32 = 0.05;
 const ARROW_BOTTOM: f32 = 1.11;
 const BOARD_INSET: f32 = 0.055;
@@ -67,7 +69,14 @@ const PIN_STRIP_TOP: f32 = 1.05;
 const PINS_COUNT: usize = 16;
 const FOCUS_RING: f32 = 0.03;
 
-pub fn paint(ui: &Ui, rect: Rect, title: &str, kind: CartKind, focused: bool) {
+pub fn paint(
+    ui: &Ui,
+    rect: Rect,
+    title: &str,
+    kind: CartKind,
+    focused: bool,
+    cover: Option<&TextureHandle>,
+) {
     let painter = ui.painter();
     let w = rect.width();
     let shell = shell_of(kind);
@@ -110,7 +119,7 @@ pub fn paint(ui: &Ui, rect: Rect, title: &str, kind: CartKind, focused: bool) {
 
     paint_ridges(ui, rect, w, &shell);
     paint_brand(ui, rect, w, &shell);
-    paint_label(ui, rect, w, &shell, title);
+    paint_label(ui, rect, w, &shell, title, cover);
 
     // An opaque shell shows the moulded arrow where a clear one shows its pins.
     if shell.board.is_none() {
@@ -290,9 +299,16 @@ fn fit_brand(ui: &Ui, brand: &str, max_width: f32, w: f32) -> std::sync::Arc<egu
     layout(size * max_width / galley.size().x)
 }
 
-/// The recessed area and the paper label inside it, with the title as art of last
-/// resort.
-fn paint_label(ui: &Ui, rect: Rect, w: f32, shell: &Shell, title: &str) {
+/// The recessed area and the paper label inside it: cover art when there is any,
+/// and the title as art of last resort.
+fn paint_label(
+    ui: &Ui,
+    rect: Rect,
+    w: f32,
+    shell: &Shell,
+    title: &str,
+    cover: Option<&TextureHandle>,
+) {
     let painter = ui.painter();
     let recess = Rect::from_min_max(
         at(rect, w, RECESS_INSET, RECESS_TOP),
@@ -309,6 +325,24 @@ fn paint_label(ui: &Ui, rect: Rect, w: f32, shell: &Shell, title: &str) {
         egui::StrokeKind::Inside,
     );
 
+    let art = label.shrink(w * LABEL_ART_MARGIN);
+
+    // A cover fills the label rather than fitting inside it: real ones are printed
+    // to the paper's edge, and the crop is kinder than letterboxing.
+    if let Some(cover) = cover {
+        painter.image(
+            cover.id(),
+            art,
+            cover_crop(
+                art.aspect_ratio(),
+                cover.size_vec2().x / cover.size_vec2().y,
+            ),
+            Color32::WHITE,
+        );
+
+        return;
+    }
+
     let text = label.shrink(w * 0.05);
     let mut job = LayoutJob::simple(
         title.to_owned(),
@@ -323,6 +357,53 @@ fn paint_label(ui: &Ui, rect: Rect, w: f32, shell: &Shell, title: &str) {
     let galley = painter.layout_job(job);
     let pos = Pos2::new(text.center().x, text.center().y - galley.size().y * 0.5);
     painter.galley(pos, galley, LABEL_TEXT);
+}
+
+/// The part of a cover to draw, in its own 0..1 space: the middle of whichever
+/// axis is too long for the label, so filling it never squashes the picture.
+fn cover_crop(label_aspect: f32, cover_aspect: f32) -> Rect {
+    let (mut w, mut h) = (1.0, 1.0);
+
+    if cover_aspect > label_aspect {
+        w = label_aspect / cover_aspect;
+    } else {
+        h = cover_aspect / label_aspect;
+    }
+
+    Rect::from_center_size(Pos2::new(0.5, 0.5), Vec2::new(w, h))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The label is a little taller than wide; covers rarely match it.
+    const LABEL_ASPECT: f32 = 0.9;
+
+    #[test]
+    fn a_wide_cover_loses_its_sides() {
+        let crop = cover_crop(LABEL_ASPECT, 1.6);
+
+        assert!(crop.width() < 1.0, "should crop across");
+        assert_eq!(crop.height(), 1.0, "should keep the full height");
+        assert_eq!(crop.center(), Pos2::new(0.5, 0.5), "should crop evenly");
+    }
+
+    #[test]
+    fn a_tall_cover_loses_its_top_and_bottom() {
+        let crop = cover_crop(LABEL_ASPECT, 0.5);
+
+        assert_eq!(crop.width(), 1.0);
+        assert!(crop.height() < 1.0);
+    }
+
+    #[test]
+    fn a_cover_of_the_labels_own_shape_is_kept_whole() {
+        let crop = cover_crop(LABEL_ASPECT, LABEL_ASPECT);
+
+        assert_eq!(crop.width(), 1.0);
+        assert_eq!(crop.height(), 1.0);
+    }
 }
 
 fn paint_arrow(ui: &Ui, rect: Rect, w: f32, shell: &Shell) {

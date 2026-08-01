@@ -4,14 +4,11 @@
 //! An empty slot has a single use, so picking it writes a state straight away.
 //! A slot with a state in it has three, which is what the action sheet is for.
 
+use crate::image::{RgbImage, TextureCache};
 use crate::menu::UiCmd;
 use crate::nav::GridFocus;
 use crate::overlay::{self, ROW_GAP, ROW_HEIGHT};
-use egui::{
-    Align, ColorImage, Layout, Rect, ScrollArea, Sense, TextureFilter, TextureHandle,
-    TextureOptions, Ui, UiBuilder, Vec2,
-};
-use std::collections::HashMap;
+use egui::{Align, Layout, Rect, ScrollArea, Sense, Ui, UiBuilder, Vec2};
 
 /// What the platform found on disk; how it reads is this side's business.
 #[derive(Default)]
@@ -36,51 +33,7 @@ pub struct StateSlot {
     /// where there is room for a second line.
     pub played: String,
     /// The screen this state was saved with, when the platform had one to hand.
-    pub shot: Option<StateShot>,
-}
-
-/// A saved screen as tightly packed RGB8 — raw pixels rather than a texture, since
-/// only this side has an egui context to upload through.
-pub struct StateShot {
-    /// `width * height * 3` bytes long.
-    pub rgb: Vec<u8>,
-    pub width: usize,
-    pub height: usize,
-}
-
-/// Screens uploaded to the GPU, kept between frames: uploading per frame would
-/// leave a texture behind every frame. Dropped wholesale when the view changes,
-/// since that is when what a slot holds can have changed too.
-#[derive(Default)]
-pub struct ShotCache {
-    version: u64,
-    textures: HashMap<usize, TextureHandle>,
-}
-
-impl ShotCache {
-    fn texture(&mut self, ui: &Ui, slot: usize, shot: &StateShot) -> &TextureHandle {
-        self.textures.entry(slot).or_insert_with(|| {
-            let image = ColorImage::from_rgb([shot.width, shot.height], &shot.rgb);
-
-            // Crisp when blown up for the sheet, smooth when shrunk into a row:
-            // nearest-neighbour minification of pixel art just drops pixels.
-            let options = TextureOptions {
-                magnification: TextureFilter::Nearest,
-                minification: TextureFilter::Linear,
-                ..Default::default()
-            };
-
-            ui.ctx()
-                .load_texture(format!("{SHOT_TEXTURE}-{slot}"), image, options)
-        })
-    }
-
-    fn sync(&mut self, version: u64) {
-        if self.version != version {
-            self.version = version;
-            self.textures.clear();
-        }
-    }
+    pub shot: Option<RgbImage>,
 }
 
 /// Where picking a list row leads.
@@ -105,21 +58,23 @@ pub enum SlotAction {
     Load,
     Overwrite,
     Rename,
+    /// Make this state's screen the game's cover in the library.
+    UseAsCover,
     Delete,
 }
 
 /// The sheet's rows: what each says and what it does to the slot. Delete sits
 /// last, furthest from the actions that keep the state.
-const ACTIONS: [(&str, SlotAction); 4] = [
+const ACTIONS: [(&str, SlotAction); 5] = [
     ("Load", SlotAction::Load),
     ("Overwrite", SlotAction::Overwrite),
     ("Rename", SlotAction::Rename),
+    ("Use as cover", SlotAction::UseAsCover),
     ("Delete", SlotAction::Delete),
 ];
 
 const LIST_WIDTH: f32 = 380.0;
 const SHEET_WIDTH: f32 = 220.0;
-const SHOT_TEXTURE: &str = "save-state-shot";
 /// Pixel art only survives whole-number scaling, so the preview is drawn at 1x or
 /// 2x — never in between — and only goes to 2x while it stays under this much of
 /// the window's height.
@@ -175,6 +130,7 @@ pub fn action_cmd(action: SlotAction, slot: usize) -> Option<UiCmd> {
         SlotAction::Load => Some(UiCmd::LoadState(slot)),
         SlotAction::Overwrite => Some(UiCmd::SaveState(slot)),
         SlotAction::Delete => Some(UiCmd::DeleteState(slot)),
+        SlotAction::UseAsCover => Some(UiCmd::SetCoverFromState { rom: None, slot }),
         SlotAction::Rename => None,
     }
 }
@@ -207,7 +163,7 @@ pub fn show(
     root: &mut Ui,
     view: &StatesView,
     focus: &mut GridFocus,
-    shots: &mut ShotCache,
+    shots: &mut TextureCache,
 ) -> Option<RowPick> {
     let count = row_count(view);
     focus.sync(count, 1);
@@ -244,7 +200,7 @@ fn show_row(
     index: usize,
     focus: &mut GridFocus,
     follow_focus: bool,
-    shots: &mut ShotCache,
+    shots: &mut TextureCache,
 ) -> bool {
     let focused = focus.is_focused(index);
     let (rect, response) = ui.allocate_exact_size(
@@ -303,7 +259,7 @@ fn show_row(
 }
 
 /// The thumbnail sits inside the row's left edge, at the screen's own aspect.
-fn thumb_rect(row: Rect, shot: &StateShot) -> Rect {
+fn thumb_rect(row: Rect, shot: &RgbImage) -> Rect {
     let height = row.height() - THUMB_PAD * 2.0;
     let width = height * shot.width as f32 / shot.height as f32;
     let min = egui::pos2(row.left() + THUMB_PAD, row.top() + THUMB_PAD);
@@ -316,7 +272,7 @@ pub fn show_actions(
     view: &StatesView,
     slot: usize,
     focus: &mut GridFocus,
-    shots: &mut ShotCache,
+    shots: &mut TextureCache,
 ) -> Option<SlotAction> {
     focus.sync(action_count(), 1);
     shots.sync(view.version);
@@ -367,7 +323,7 @@ pub fn show_actions(
 
 /// Whole-number scaling only; 2x when the window can spare the height, 1x when it
 /// cannot.
-fn shot_size(screen: Vec2, shot: &StateShot) -> Vec2 {
+fn shot_size(screen: Vec2, shot: &RgbImage) -> Vec2 {
     let native = Vec2::new(shot.width as f32, shot.height as f32);
     let fits = (screen.y * SHOT_MAX_SCREEN / native.y).floor();
 
@@ -436,7 +392,7 @@ mod tests {
     #[test]
     fn every_action_maps_to_its_own_command() {
         assert_eq!(action_at(0), Some(SlotAction::Load));
-        assert_eq!(action_at(3), Some(SlotAction::Delete));
+        assert_eq!(action_at(action_count() - 1), Some(SlotAction::Delete));
         assert_eq!(action_at(action_count()), None);
         assert_eq!(action_cmd(SlotAction::Load, 4), Some(UiCmd::LoadState(4)));
         assert_eq!(
@@ -446,6 +402,10 @@ mod tests {
         assert_eq!(
             action_cmd(SlotAction::Delete, 4),
             Some(UiCmd::DeleteState(4))
+        );
+        assert_eq!(
+            action_cmd(SlotAction::UseAsCover, 4),
+            Some(UiCmd::SetCoverFromState { rom: None, slot: 4 })
         );
     }
 

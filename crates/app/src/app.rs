@@ -6,10 +6,11 @@ use crate::frontend::{ActiveFrontend, Frontend, FrontendCtx};
 use crate::input::handler::InputHandler;
 use crate::notification::Notifications;
 use crate::palette::LcdPalette;
+use crate::rom_cover;
 use crate::rom_meta::RomMeta;
 use crate::roms::RomsState;
 use crate::state_meta::{CartId, StateMeta};
-use crate::state_shot::StateShot;
+use crate::state_shot;
 use crate::video::shader::{next_shader_by_name, prev_shader_by_name};
 use crate::video::AppVideo;
 use crate::{AppConfigFile, AppPlatform, PlatformFileDialog, PlatformFileSystem};
@@ -418,13 +419,15 @@ where
                     log::warn!("Failed save state meta: {err}");
                 }
 
-                let shot = StateShot::of(
+                let shot = state_shot::save(
+                    &name,
+                    &index,
                     emu.get_framebuffer(),
                     RenderConfig::WIDTH,
                     RenderConfig::HEIGHT,
                 );
 
-                if let Err(err) = shot.save_file(&name, &index) {
+                if let Err(err) = shot {
                     log::warn!("Failed save state shot: {err}");
                 }
 
@@ -488,7 +491,7 @@ where
             log::warn!("Failed delete state meta: {err}");
         }
 
-        if let Err(err) = StateShot::delete_file(&name, &index) {
+        if let Err(err) = state_shot::delete(&name, &index) {
             log::warn!("Failed delete state shot: {err}");
         }
 
@@ -545,6 +548,74 @@ where
             format!("Renamed to {}", meta.name)
         };
         self.notifications.add(msg);
+    }
+
+    /// A state's screen is already a PNG of the same kind a cover is, and smaller
+    /// than the size covers are held to, so taking that file neither converts nor
+    /// resizes anything. A state older than those files still has its screen inside
+    /// it, at the price of decoding the whole state.
+    pub fn handle_cover_from_state(&mut self, rom: &Path, index: usize) {
+        let Some(game) = self.platform.fs.get_file_name(rom) else {
+            log::error!("Failed cover_from_state: filesystem.get_file_name: None");
+            return;
+        };
+        let suffix = index.to_string();
+        let set = rom_cover::import(&game, &state_shot::path(&game, &suffix)).or_else(|_| {
+            let shot = state_shot::load_from_state(&game, &suffix)?;
+
+            rom_cover::set(&game, &shot)
+        });
+
+        if let Err(err) = set {
+            log::error!("Failed cover_from_state: {err}");
+            self.notifications.add("Failed to read that state");
+            return;
+        }
+
+        self.frontend.request_update();
+        self.notifications
+            .add(format!("Cover set from state {index}"));
+    }
+
+    pub fn handle_remove_rom_cover(&mut self, rom: &Path) {
+        let Some(game) = self.platform.fs.get_file_name(rom) else {
+            log::error!("Failed remove_rom_cover: filesystem.get_file_name: None");
+            return;
+        };
+
+        if let Err(err) = rom_cover::delete(&game) {
+            log::error!("Failed remove_rom_cover: {err}");
+            return;
+        }
+
+        self.frontend.request_update();
+        self.notifications.add(format!("Cover removed from {game}"));
+    }
+
+    /// Asks for the picture and imports it; the dialog is the platform's, so this
+    /// cannot live on the UI side.
+    pub fn handle_set_rom_cover(&mut self, path: &Path) {
+        let Some(game) = self.platform.fs.get_file_name(path) else {
+            log::error!("Failed set_rom_cover: filesystem.get_file_name: None");
+            return;
+        };
+        let picked = self.platform.fd.select_file(
+            "Select cover image",
+            (&["*.png", "*.jpg", "*.jpeg"], "Images (*.png, *.jpg)"),
+        );
+
+        let Some(picked) = picked else {
+            return;
+        };
+
+        if let Err(err) = rom_cover::import(&game, Path::new(&picked)) {
+            log::error!("Failed set_rom_cover: {err}");
+            self.notifications.add("Failed to read that image");
+            return;
+        }
+
+        self.frontend.request_update();
+        self.notifications.add(format!("Cover set for {game}"));
     }
 
     pub fn save_files(&mut self, emu: &mut Emu) -> Result<(), String> {

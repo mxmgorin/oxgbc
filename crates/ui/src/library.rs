@@ -2,6 +2,7 @@
 //! be done with one besides playing it.
 
 use crate::cart::{self, CartKind};
+use crate::image::{RgbImage, TextureCache};
 use crate::menu::UiCmd;
 use crate::nav::GridFocus;
 use crate::overlay;
@@ -10,11 +11,16 @@ use egui::{Rect, Sense, Ui, Vec2};
 /// Read-model the platform fills in; the screen never reaches into app state.
 pub struct LibraryView<'a> {
     pub entries: &'a [RomEntry],
+    /// Bumped every time the platform rebuilds this view, which is the signal to
+    /// throw away textures uploaded from the covers it replaced.
+    pub version: u64,
 }
 
 pub struct RomEntry {
     pub title: String,
     pub kind: CartKind,
+    /// Cover art for the cart's label, when the game has any.
+    pub cover: Option<RgbImage>,
 }
 
 /// What the cart's own sheet offers. Playing it is Confirm on the shelf, so it is
@@ -22,9 +28,11 @@ pub struct RomEntry {
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum RomAction {
     Rename,
+    Cover,
 }
 
-const ACTIONS: [(&str, RomAction); 1] = [("Rename", RomAction::Rename)];
+const ACTIONS: [(&str, RomAction); 2] =
+    [("Rename", RomAction::Rename), ("Cover", RomAction::Cover)];
 const SHEET_WIDTH: f32 = 260.0;
 
 pub fn action_count() -> usize {
@@ -64,9 +72,11 @@ pub fn library(
     root: &mut Ui,
     view: &LibraryView,
     focus: &mut GridFocus,
+    covers: &mut TextureCache,
     out: &mut Vec<UiCmd>,
 ) -> bool {
     let mut open_settings = false;
+    covers.sync(view.version);
 
     egui::CentralPanel::default().show(root, |ui| {
         ui.horizontal(|ui| {
@@ -83,13 +93,19 @@ pub fn library(
             return;
         }
 
-        egui::ScrollArea::vertical().show(ui, |ui| shelf(ui, view, focus, out));
+        egui::ScrollArea::vertical().show(ui, |ui| shelf(ui, view, focus, covers, out));
     });
 
     open_settings
 }
 
-fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &mut Vec<UiCmd>) {
+fn shelf(
+    ui: &mut Ui,
+    view: &LibraryView,
+    focus: &mut GridFocus,
+    covers: &mut TextureCache,
+    out: &mut Vec<UiCmd>,
+) {
     let follow_focus = focus.take_moved();
     let tile = Vec2::new(TILE_WIDTH, TILE_WIDTH * cart::ASPECT);
     // Every cell reserves what the focused cart needs, so growing one never
@@ -138,7 +154,11 @@ fn shelf(ui: &mut Ui, view: &LibraryView, focus: &mut GridFocus, out: &mut Vec<U
 
                 let size = if focused { tile * FOCUS_SCALE } else { tile };
                 let cart = Rect::from_center_size(rect.center(), size);
-                cart::paint(ui, cart, &entry.title, entry.kind, focused);
+                let cover = entry
+                    .cover
+                    .as_ref()
+                    .map(|cover| covers.texture(ui, index, cover).clone());
+                cart::paint(ui, cart, &entry.title, entry.kind, focused, cover.as_ref());
             }
         });
         ui.add_space(MIN_GAP);

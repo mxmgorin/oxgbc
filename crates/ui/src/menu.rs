@@ -4,6 +4,7 @@
 //! moving between them never leaves this crate. Everything the platform has to
 //! act on comes back as a [`UiCmd`].
 
+use crate::cover::{self, CoverAction, CoverOffer};
 use crate::library::{self, library, LibraryView};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
@@ -28,6 +29,16 @@ pub enum UiCmd {
     RenameState(usize, String),
     /// Call this cartridge something; an empty name goes back to its file name.
     RenameRom(usize, String),
+    /// Ask for a cover picture for this cartridge.
+    SetRomCover(usize),
+    /// Take this cartridge's cover away.
+    RemoveRomCover(usize),
+    /// Make a state's screen a game's cover: the cart by shelf index, or the
+    /// loaded game when there is no index to give — the slot sheet has none.
+    SetCoverFromState {
+        rom: Option<usize>,
+        slot: usize,
+    },
     RestartRom,
     /// Move a settings row by `step` (`-1`/`1`); toggles and actions ignore it.
     Setting {
@@ -43,6 +54,10 @@ pub struct Views<'a> {
     pub library: LibraryView<'a>,
     pub settings: &'a SettingsView,
     pub states: &'a StatesView,
+    /// The save states of the cart whose cover is being worked on, empty the rest
+    /// of the time: reading them costs a stat per slot, so the platform only does
+    /// it once a cover screen is open.
+    pub rom_states: &'a StatesView,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
@@ -62,6 +77,10 @@ enum Screen {
     RomActions(usize),
     /// Naming one cartridge.
     RomRename(usize),
+    /// What can be done with one cartridge's cover.
+    RomCover(usize),
+    /// Which of the game's states to take a cover from.
+    CoverFromState(usize),
 }
 
 /// What picking a pause row does: hand the platform a command, or move on to the
@@ -105,7 +124,15 @@ pub struct Menu {
     actions: GridFocus,
     /// The cart action sheet, which is a different list from the slot one.
     rom_actions: GridFocus,
-    shots: states::ShotCache,
+    cover_actions: GridFocus,
+    /// The slot picker for a cover keeps its own focus and textures: it lists
+    /// another game's slots than the pause screens do, and one cache keyed by slot
+    /// number would hand out the wrong picture.
+    cover_states: GridFocus,
+    cover_shots: crate::image::TextureCache,
+    shots: crate::image::TextureCache,
+    /// Covers uploaded for the shelf, which is a different set from the shots.
+    covers: crate::image::TextureCache,
     rename: RenameEdit,
 }
 
@@ -125,6 +152,15 @@ impl Menu {
     pub fn open_slot(&self) -> Option<usize> {
         match self.screen {
             Screen::StateActions(slot) | Screen::StateRename(slot) => Some(slot),
+            _ => None,
+        }
+    }
+
+    /// The cart whose cover is being worked on, so the platform knows whose save
+    /// states to look up.
+    pub fn open_cover_rom(&self) -> Option<usize> {
+        match self.screen {
+            Screen::RomCover(index) | Screen::CoverFromState(index) => Some(index),
             _ => None,
         }
     }
@@ -196,6 +232,80 @@ impl Menu {
 
                 self.finish_rom_rename(index, event)
             }
+            Screen::RomCover(index) => match self.cover_actions.nav(action)? {
+                FocusEvent::Activate(row) => {
+                    let action = cover::action_at(self.cover_offer(views, index), row)?;
+
+                    self.act_on_cover(action, index)
+                }
+                FocusEvent::Back => {
+                    self.screen = Screen::RomActions(index);
+                    None
+                }
+            },
+            Screen::CoverFromState(index) => match self.cover_states.nav(action)? {
+                FocusEvent::Activate(row) => {
+                    let pick = states::pick(views.rom_states, row)?;
+
+                    self.pick_cover_state(index, pick)
+                }
+                FocusEvent::Back => {
+                    self.screen = Screen::RomCover(index);
+                    None
+                }
+            },
+        }
+    }
+
+    /// What the cart at `index` makes possible: a cover it already has can be taken
+    /// away, and a state it has can be taken a screen from.
+    fn cover_offer(&self, views: &Views<'_>, index: usize) -> CoverOffer {
+        CoverOffer {
+            has_cover: views
+                .library
+                .entries
+                .get(index)
+                .is_some_and(|entry| entry.cover.is_some()),
+            has_states: !views.rom_states.slots.is_empty(),
+        }
+    }
+
+    fn act_on_cover(&mut self, action: CoverAction, index: usize) -> Option<UiCmd> {
+        match action {
+            CoverAction::UseState => {
+                self.cover_states = GridFocus::default();
+                self.screen = Screen::CoverFromState(index);
+
+                None
+            }
+            // Both are done with the screen: the dialog takes over for one, and the
+            // other is over as soon as it is asked for.
+            CoverAction::UseFile => {
+                self.screen = Screen::Library;
+
+                Some(UiCmd::SetRomCover(index))
+            }
+            CoverAction::Remove => {
+                self.screen = Screen::Library;
+
+                Some(UiCmd::RemoveRomCover(index))
+            }
+        }
+    }
+
+    fn pick_cover_state(&mut self, index: usize, pick: RowPick) -> Option<UiCmd> {
+        match pick {
+            RowPick::Open(slot) => {
+                self.screen = Screen::Library;
+
+                Some(UiCmd::SetCoverFromState {
+                    rom: Some(index),
+                    slot,
+                })
+            }
+            // The platform leaves no free slot in a picker's view, since writing a
+            // state is not one of the things being picked between.
+            RowPick::Create(_) => None,
         }
     }
 
@@ -221,6 +331,12 @@ impl Menu {
             library::RomAction::Rename => {
                 self.rename.start(rom_title(views, index));
                 self.screen = Screen::RomRename(index);
+
+                None
+            }
+            library::RomAction::Cover => {
+                self.cover_actions = GridFocus::default();
+                self.screen = Screen::RomCover(index);
 
                 None
             }
@@ -326,7 +442,9 @@ impl Menu {
     pub fn show(&mut self, root: &mut egui::Ui, views: &Views<'_>, out: &mut Vec<UiCmd>) {
         match self.screen {
             Screen::Library => {
-                if library(root, &views.library, &mut self.library, out) {
+                let covers = &mut self.covers;
+
+                if library(root, &views.library, &mut self.library, covers, out) {
                     self.screen = Screen::Settings;
                 }
             }
@@ -371,6 +489,31 @@ impl Menu {
 
                 if let Some(action) = picked {
                     out.extend(self.act_on_rom(action, index, views));
+                }
+            }
+            Screen::RomCover(index) => {
+                let offer = self.cover_offer(views, index);
+                let picked = cover::show_actions(
+                    root,
+                    rom_title(views, index),
+                    offer,
+                    &mut self.cover_actions,
+                );
+
+                if let Some(action) = picked {
+                    out.extend(self.act_on_cover(action, index));
+                }
+            }
+            Screen::CoverFromState(index) => {
+                let picked = states::show(
+                    root,
+                    views.rom_states,
+                    &mut self.cover_states,
+                    &mut self.cover_shots,
+                );
+
+                if let Some(pick) = picked {
+                    out.extend(self.pick_cover_state(index, pick));
                 }
             }
             Screen::RomRename(index) => {

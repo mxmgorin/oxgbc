@@ -23,6 +23,12 @@ pub enum AppCmd {
     RenameState(usize, String),
     /// Names a ROM of the library; an empty name goes back to its file name.
     RenameRom(PathBuf, String),
+    /// Asks for a cover picture for this ROM and stores it beside its metadata.
+    SetRomCover(PathBuf),
+    /// Takes a ROM's cover away.
+    RemoveRomCover(PathBuf),
+    /// Makes the screen of one of this ROM's states its cover.
+    SetCoverFromState(PathBuf, usize),
     SelectRom,
     Quit,
     ChangeConfig(ChangeConfigCmd),
@@ -52,6 +58,9 @@ impl AppCmd {
             AppCmd::DeleteState(_) => "Delete State",
             AppCmd::RenameState(_, _) => "Rename State",
             AppCmd::RenameRom(_, _) => "Rename ROM",
+            AppCmd::SetRomCover(_) => "Set Cover",
+            AppCmd::RemoveRomCover(_) => "Remove Cover",
+            AppCmd::SetCoverFromState(_, _) => "Cover From State",
             AppCmd::SelectRom => "Select ROM",
             AppCmd::Quit => "Quit",
             AppCmd::ChangeConfig(conf) => conf.name(),
