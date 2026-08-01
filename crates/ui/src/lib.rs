@@ -7,6 +7,7 @@ pub mod library;
 pub mod menu;
 pub mod nav;
 mod overlay;
+pub mod rename;
 pub mod settings;
 pub mod states;
 

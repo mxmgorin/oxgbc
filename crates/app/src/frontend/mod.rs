@@ -36,6 +36,9 @@ pub enum NavAction {
     Right,
     Confirm,
     Back,
+    /// Whatever else can be done with the focused item — the Select button, which
+    /// no menu needs for anything else.
+    Options,
 }
 
 /// App state a frontend reads while it is itself mutably borrowed — passed as

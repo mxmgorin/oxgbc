@@ -8,6 +8,11 @@ pub(crate) const OVERLAY_DIM: Color32 = Color32::from_black_alpha(0xb4);
 pub(crate) const ROW_HEIGHT: f32 = 32.0;
 pub(crate) const ROW_GAP: f32 = 6.0;
 
+/// Height a popup has to reserve for one line of title above its rows.
+pub(crate) fn title_height() -> f32 {
+    ROW_HEIGHT + ROW_GAP
+}
+
 /// Height a popup has to reserve for `count` plain rows, heading excluded.
 pub(crate) fn rows_height(count: usize) -> f32 {
     rows_height_of(count, ROW_HEIGHT)

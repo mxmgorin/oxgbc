@@ -137,13 +137,15 @@ where
     None
 }
 
+/// Select is the options button while a menu is up: B already backs out, so
+/// nothing else needs it.
 pub fn handle_select<FS, FD>(pressed: bool, app: &mut App<FS, FD>, emu: &mut Emu)
 where
     FS: PlatformFileSystem,
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        nav(NavAction::Back, app);
+        nav(NavAction::Options, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.select = pressed;
     }

@@ -4,9 +4,10 @@
 //! moving between them never leaves this crate. Everything the platform has to
 //! act on comes back as a [`UiCmd`].
 
-use crate::library::{library, LibraryView};
+use crate::library::{self, library, LibraryView};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
+use crate::rename::{self, RenameEdit, RenameEvent};
 use crate::settings::{row_at, settings, SettingId, SettingsView};
 use crate::states::{self, RowPick, StatesView};
 use egui::Vec2;
@@ -25,6 +26,8 @@ pub enum UiCmd {
     DeleteState(usize),
     /// Call this slot's state something; an empty name clears it.
     RenameState(usize, String),
+    /// Call this cartridge something; an empty name goes back to its file name.
+    RenameRom(usize, String),
     RestartRom,
     /// Move a settings row by `step` (`-1`/`1`); toggles and actions ignore it.
     Setting {
@@ -55,6 +58,10 @@ enum Screen {
     StateActions(usize),
     /// Naming the state in one slot.
     StateRename(usize),
+    /// What can be done with one cartridge of the library, besides playing it.
+    RomActions(usize),
+    /// Naming one cartridge.
+    RomRename(usize),
 }
 
 /// What picking a pause row does: hand the platform a command, or move on to the
@@ -63,6 +70,16 @@ enum Screen {
 enum PauseAction {
     Cmd(UiCmd),
     Open(Screen),
+}
+
+/// What the shelf calls the cart at `index`, which is also what renaming starts
+/// from; empty when the shelf has no such cart.
+fn rom_title<'a>(views: &'a Views<'_>, index: usize) -> &'a str {
+    views
+        .library
+        .entries
+        .get(index)
+        .map_or("", |entry| entry.title.as_str())
 }
 
 /// A row of the pause overlay: what it says and what it does.
@@ -86,8 +103,10 @@ pub struct Menu {
     settings: GridFocus,
     states: GridFocus,
     actions: GridFocus,
+    /// The cart action sheet, which is a different list from the slot one.
+    rom_actions: GridFocus,
     shots: states::ShotCache,
-    rename: states::RenameEdit,
+    rename: RenameEdit,
 }
 
 impl Menu {
@@ -112,6 +131,11 @@ impl Menu {
 
     pub fn nav(&mut self, action: NavAction, views: &Views<'_>) -> Option<UiCmd> {
         match self.screen {
+            Screen::Library if action == NavAction::Options => {
+                self.open_rom_actions(views);
+
+                None
+            }
             Screen::Library => match self.library.nav(action)? {
                 FocusEvent::Activate(index) => Some(UiCmd::LaunchRom(index)),
                 // Backing out of the library only makes sense with a game to
@@ -156,6 +180,65 @@ impl Menu {
 
                 self.finish_rename(slot, event)
             }
+            Screen::RomActions(index) => match self.rom_actions.nav(action)? {
+                FocusEvent::Activate(row) => {
+                    let action = library::action_at(row)?;
+
+                    self.act_on_rom(action, index, views)
+                }
+                FocusEvent::Back => {
+                    self.screen = Screen::Library;
+                    None
+                }
+            },
+            Screen::RomRename(index) => {
+                let event = self.rename.nav(action)?;
+
+                self.finish_rom_rename(index, event)
+            }
+        }
+    }
+
+    /// The focused cart's own sheet. An empty shelf has nothing to open one for.
+    fn open_rom_actions(&mut self, views: &Views<'_>) {
+        let index = self.library.index();
+
+        if views.library.entries.get(index).is_none() {
+            return;
+        }
+
+        self.rom_actions = GridFocus::default();
+        self.screen = Screen::RomActions(index);
+    }
+
+    fn act_on_rom(
+        &mut self,
+        action: library::RomAction,
+        index: usize,
+        views: &Views<'_>,
+    ) -> Option<UiCmd> {
+        match action {
+            library::RomAction::Rename => {
+                self.rename.start(rom_title(views, index));
+                self.screen = Screen::RomRename(index);
+
+                None
+            }
+        }
+    }
+
+    fn finish_rom_rename(&mut self, index: usize, event: RenameEvent) -> Option<UiCmd> {
+        match event {
+            RenameEvent::Commit => {
+                self.screen = Screen::Library;
+
+                Some(UiCmd::RenameRom(index, self.rename.take_text()))
+            }
+            RenameEvent::Cancel => {
+                self.screen = Screen::RomActions(index);
+
+                None
+            }
         }
     }
 
@@ -195,14 +278,14 @@ impl Menu {
 
     /// Saving lands back in the list, where the new name shows; cancelling goes
     /// back to the sheet the rename was started from.
-    fn finish_rename(&mut self, slot: usize, event: states::RenameEvent) -> Option<UiCmd> {
+    fn finish_rename(&mut self, slot: usize, event: RenameEvent) -> Option<UiCmd> {
         match event {
-            states::RenameEvent::Commit => {
+            RenameEvent::Commit => {
                 self.screen = Screen::States;
 
                 Some(UiCmd::RenameState(slot, self.rename.take_text()))
             }
-            states::RenameEvent::Cancel => {
+            RenameEvent::Cancel => {
                 self.screen = Screen::StateActions(slot);
 
                 None
@@ -270,8 +353,36 @@ impl Menu {
                 }
             }
             Screen::StateRename(slot) => {
-                if let Some(event) = states::show_rename(root, slot, &mut self.rename) {
+                let title = format!("Name slot {slot}");
+                let event = rename::show(
+                    root,
+                    &title,
+                    "Leave empty to go by number",
+                    &mut self.rename,
+                );
+
+                if let Some(event) = event {
                     out.extend(self.finish_rename(slot, event));
+                }
+            }
+            Screen::RomActions(index) => {
+                let picked =
+                    library::show_actions(root, rom_title(views, index), &mut self.rom_actions);
+
+                if let Some(action) = picked {
+                    out.extend(self.act_on_rom(action, index, views));
+                }
+            }
+            Screen::RomRename(index) => {
+                let event = rename::show(
+                    root,
+                    "Name cartridge",
+                    "Leave empty to use the file name",
+                    &mut self.rename,
+                );
+
+                if let Some(event) = event {
+                    out.extend(self.finish_rom_rename(index, event));
                 }
             }
         }

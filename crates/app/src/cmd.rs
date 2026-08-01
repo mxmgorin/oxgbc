@@ -21,6 +21,8 @@ pub enum AppCmd {
     DeleteState(usize),
     /// Names the state in the loaded game's slot; an empty name clears it.
     RenameState(usize, String),
+    /// Names a ROM of the library; an empty name goes back to its file name.
+    RenameRom(PathBuf, String),
     SelectRom,
     Quit,
     ChangeConfig(ChangeConfigCmd),
@@ -49,6 +51,7 @@ impl AppCmd {
             AppCmd::SaveState(m, _) => m.name(),
             AppCmd::DeleteState(_) => "Delete State",
             AppCmd::RenameState(_, _) => "Rename State",
+            AppCmd::RenameRom(_, _) => "Rename ROM",
             AppCmd::SelectRom => "Select ROM",
             AppCmd::Quit => "Quit",
             AppCmd::ChangeConfig(conf) => conf.name(),

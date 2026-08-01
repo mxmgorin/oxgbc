@@ -1,8 +1,10 @@
-//! The library screen: the game collection as a shelf of cartridges.
+//! The library screen: the game collection as a shelf of cartridges, and what can
+//! be done with one besides playing it.
 
 use crate::cart::{self, CartKind};
 use crate::menu::UiCmd;
 use crate::nav::GridFocus;
+use crate::overlay;
 use egui::{Rect, Sense, Ui, Vec2};
 
 /// Read-model the platform fills in; the screen never reaches into app state.
@@ -13,6 +15,37 @@ pub struct LibraryView<'a> {
 pub struct RomEntry {
     pub title: String,
     pub kind: CartKind,
+}
+
+/// What the cart's own sheet offers. Playing it is Confirm on the shelf, so it is
+/// not repeated here.
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum RomAction {
+    Rename,
+}
+
+const ACTIONS: [(&str, RomAction); 1] = [("Rename", RomAction::Rename)];
+const SHEET_WIDTH: f32 = 260.0;
+
+pub fn action_count() -> usize {
+    ACTIONS.len()
+}
+
+pub fn action_at(index: usize) -> Option<RomAction> {
+    ACTIONS.get(index).map(|(_, action)| *action)
+}
+
+pub fn show_actions(root: &mut Ui, title: &str, focus: &mut GridFocus) -> Option<RomAction> {
+    focus.sync(action_count(), 1);
+    let height = overlay::title_height() + overlay::rows_height(action_count());
+    let mut clicked = None;
+
+    overlay::popup(root, Vec2::new(SHEET_WIDTH, height), |ui| {
+        ui.heading(title);
+        clicked = overlay::rows(ui, ACTIONS.iter().map(|(label, _)| *label), focus);
+    });
+
+    clicked.and_then(action_at)
 }
 
 const TILE_WIDTH: f32 = 132.0;

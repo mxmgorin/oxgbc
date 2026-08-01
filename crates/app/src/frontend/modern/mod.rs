@@ -190,6 +190,9 @@ impl ModernFrontend {
             ui::UiCmd::LoadState(slot) => AppCmd::SaveState(SaveStateCmd::Load, Some(slot)),
             ui::UiCmd::DeleteState(slot) => AppCmd::DeleteState(slot),
             ui::UiCmd::RenameState(slot, name) => AppCmd::RenameState(slot, name),
+            ui::UiCmd::RenameRom(index, name) => {
+                AppCmd::RenameRom(self.paths.get(index)?.clone(), name)
+            }
             ui::UiCmd::RestartRom => AppCmd::RestartRom,
             ui::UiCmd::Quit => AppCmd::Quit,
         })
@@ -237,5 +240,6 @@ fn into_nav(action: NavAction) -> ui::NavAction {
         NavAction::Right => ui::NavAction::Right,
         NavAction::Confirm => ui::NavAction::Confirm,
         NavAction::Back => ui::NavAction::Back,
+        NavAction::Options => ui::NavAction::Options,
     }
 }

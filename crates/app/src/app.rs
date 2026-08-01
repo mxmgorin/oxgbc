@@ -6,6 +6,7 @@ use crate::frontend::{ActiveFrontend, Frontend, FrontendCtx};
 use crate::input::handler::InputHandler;
 use crate::notification::Notifications;
 use crate::palette::LcdPalette;
+use crate::rom_meta::RomMeta;
 use crate::roms::RomsState;
 use crate::state_meta::{CartId, StateMeta};
 use crate::state_shot::StateShot;
@@ -518,6 +519,30 @@ where
             format!("Cleared name of save state: {index}")
         } else {
             format!("Renamed save state {index}: {}", meta.name)
+        };
+        self.notifications.add(msg);
+    }
+
+    /// Touches only the library sidecar — the ROM file itself is never written to.
+    pub fn handle_rename_rom(&mut self, path: &Path, name: String) {
+        let Some(game) = self.platform.fs.get_file_name(path) else {
+            log::error!("Failed rename_rom: filesystem.get_file_name: None");
+            return;
+        };
+
+        let mut meta = RomMeta::load_or_create(path, &game);
+        meta.name = name;
+
+        if let Err(err) = meta.save_file(&game) {
+            log::error!("Failed rename_rom: {err}");
+            return;
+        }
+
+        self.frontend.request_update();
+        let msg = if meta.name.is_empty() {
+            format!("Cleared name of {game}")
+        } else {
+            format!("Renamed to {}", meta.name)
         };
         self.notifications.add(msg);
     }
