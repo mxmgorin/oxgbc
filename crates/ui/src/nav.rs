@@ -50,6 +50,16 @@ impl GridFocus {
         self.len > 0 && self.index == index
     }
 
+    /// Whether moving up would wrap around, which is a screen's cue to hand the
+    /// focus to whatever sits above the grid instead.
+    pub fn on_top_row(&self) -> bool {
+        self.index < self.columns
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// Whether the highlight moved since this was last asked.
     pub fn take_moved(&mut self) -> bool {
         std::mem::take(&mut self.moved)

@@ -5,7 +5,7 @@
 //! act on comes back as a [`UiCmd`].
 
 use crate::cover::{self, CoverAction, CoverOffer};
-use crate::library::{self, library, LibraryEvent, LibraryView};
+use crate::library::{self, library, LibraryEvent, LibraryFocus, LibraryPick, LibraryView};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
@@ -119,7 +119,7 @@ pub struct Menu {
     screen: Screen,
     /// Where Back returns to, so settings can be reached from either screen.
     opener: Screen,
-    library: GridFocus,
+    library: LibraryFocus,
     pause: GridFocus,
     settings: GridFocus,
     states: GridFocus,
@@ -170,15 +170,16 @@ impl Menu {
     pub fn nav(&mut self, action: NavAction, views: &Views<'_>) -> Option<UiCmd> {
         match self.screen {
             Screen::Library if action == NavAction::Options => {
-                self.open_rom_actions(views);
+                self.open_rom_actions();
 
                 None
             }
             Screen::Library => match self.library.nav(action)? {
-                FocusEvent::Activate(index) => Some(UiCmd::LaunchRom(index)),
+                LibraryPick::Rom(index) => Some(UiCmd::LaunchRom(index)),
+                LibraryPick::Header(event) => self.library_event(event),
                 // Backing out of the library only makes sense with a game to
                 // return to, and then the overlay is where we came from.
-                FocusEvent::Back => (self.opener == Screen::Pause).then(|| {
+                LibraryPick::Back => (self.opener == Screen::Pause).then(|| {
                     self.screen = Screen::Pause;
                     UiCmd::Resume
                 }),
@@ -311,16 +312,27 @@ impl Menu {
         }
     }
 
-    /// The focused cart's own sheet. An empty shelf has nothing to open one for.
-    fn open_rom_actions(&mut self, views: &Views<'_>) {
-        let index = self.library.index();
-
-        if views.library.entries.get(index).is_none() {
+    /// The focused cart's own sheet. Nothing to open one for when the focus is on
+    /// the header, or the shelf is empty.
+    fn open_rom_actions(&mut self) {
+        let Some(index) = self.library.rom() else {
             return;
-        }
+        };
 
         self.rom_actions = GridFocus::default();
         self.screen = Screen::RomActions(index);
+    }
+
+    /// What the header asks for, however it was asked — a press or a click.
+    fn library_event(&mut self, event: LibraryEvent) -> Option<UiCmd> {
+        match event {
+            LibraryEvent::OpenSettings => {
+                self.screen = Screen::Settings;
+
+                None
+            }
+            LibraryEvent::AddRom => Some(UiCmd::AddRom),
+        }
     }
 
     fn act_on_rom(
@@ -447,10 +459,8 @@ impl Menu {
                 let covers = &mut self.covers;
                 let asked = library(root, &views.library, &mut self.library, covers, out);
 
-                match asked {
-                    Some(LibraryEvent::OpenSettings) => self.screen = Screen::Settings,
-                    Some(LibraryEvent::AddRom) => out.push(UiCmd::AddRom),
-                    None => {}
+                if let Some(event) = asked {
+                    out.extend(self.library_event(event));
                 }
             }
             Screen::Pause => self.pause_overlay(root, out),
