@@ -5,7 +5,7 @@
 //! A slot with a state in it has three, which is what the action sheet is for.
 
 use crate::menu::UiCmd;
-use crate::nav::GridFocus;
+use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay::{self, ROW_GAP, ROW_HEIGHT};
 use egui::{
     Align, ColorImage, Layout, Rect, ScrollArea, Sense, TextureFilter, TextureHandle,
@@ -365,11 +365,26 @@ pub fn show_actions(
     clicked.and_then(action_at)
 }
 
-/// The name being typed, plus whether the field still has to take focus — egui
-/// only routes the keyboard to a widget that has it.
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum RenameEvent {
+    Commit,
+    Cancel,
+}
+
+/// The two ways out of the rename screen, as buttons a gamepad can move along —
+/// typing needs a keyboard, but confirming and backing out must not. Save sits on
+/// the right, where the action that goes through belongs.
+const RENAME_ACTIONS: [(&str, RenameEvent); 2] = [
+    ("Cancel", RenameEvent::Cancel),
+    ("Save", RenameEvent::Commit),
+];
+
+/// The name being typed, which of the two buttons is picked, and whether the field
+/// still has to take focus — egui only routes the keyboard to a widget that has it.
 #[derive(Default)]
 pub struct RenameEdit {
     text: String,
+    focus: GridFocus,
     grab: bool,
 }
 
@@ -379,6 +394,20 @@ impl RenameEdit {
     pub fn start(&mut self, name: &str) {
         self.text = name.to_owned();
         self.grab = true;
+        self.focus = GridFocus::default();
+        // One row of buttons, so Left/Right walk it.
+        self.focus.sync(RENAME_ACTIONS.len(), RENAME_ACTIONS.len());
+        // Start on the action that keeps what was typed, wherever it sits.
+        self.focus.focus(commit_index());
+    }
+
+    /// Directional input from a gamepad, which egui never sees: its events go to
+    /// the app, not through the window's keyboard.
+    pub fn nav(&mut self, action: NavAction) -> Option<RenameEvent> {
+        match self.focus.nav(action)? {
+            FocusEvent::Activate(index) => rename_action_at(index),
+            FocusEvent::Back => Some(RenameEvent::Cancel),
+        }
     }
 
     pub fn take_text(&mut self) -> String {
@@ -386,13 +415,19 @@ impl RenameEdit {
     }
 }
 
-pub enum RenameEvent {
-    Commit,
-    Cancel,
+fn rename_action_at(index: usize) -> Option<RenameEvent> {
+    RENAME_ACTIONS.get(index).map(|(_, event)| *event)
+}
+
+fn commit_index() -> usize {
+    RENAME_ACTIONS
+        .iter()
+        .position(|(_, event)| *event == RenameEvent::Commit)
+        .expect("RENAME_ACTIONS always offers a way to commit")
 }
 
 pub fn show_rename(root: &mut Ui, slot: usize, edit: &mut RenameEdit) -> Option<RenameEvent> {
-    let height = TITLE_HEIGHT * 2.0 + overlay::rows_height(1);
+    let height = TITLE_HEIGHT * 2.0 + overlay::rows_height(RENAME_ACTIONS.len());
     let mut event = None;
 
     overlay::popup(root, Vec2::new(LIST_WIDTH, height), |ui| {
@@ -406,17 +441,46 @@ pub fn show_rename(root: &mut Ui, slot: usize, edit: &mut RenameEdit) -> Option<
             field.request_focus();
         }
 
-        // Enter commits. Losing focus any other way — Escape, a click elsewhere —
-        // leaves the name alone, so nothing is renamed by walking away.
+        // The field has already handled the keystroke by the time we get here, so
+        // both keys read as focus going away. Losing it any other way — a click on
+        // one of the buttons, or outside — leaves the screen up for them to answer.
         if field.lost_focus() {
-            event = Some(if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                RenameEvent::Commit
-            } else {
-                RenameEvent::Cancel
+            let (enter, escape) = ui.input(|i| {
+                (
+                    i.key_pressed(egui::Key::Enter),
+                    i.key_pressed(egui::Key::Escape),
+                )
             });
+
+            if enter {
+                event = Some(RenameEvent::Commit);
+            } else if escape {
+                event = Some(RenameEvent::Cancel);
+            }
         }
 
-        ui.weak("Enter to save, Esc to cancel");
+        edit.focus.sync(RENAME_ACTIONS.len(), RENAME_ACTIONS.len());
+
+        ui.horizontal(|ui| {
+            let width = (ui.available_width() - ROW_GAP) / RENAME_ACTIONS.len() as f32;
+
+            for (index, (label, action)) in RENAME_ACTIONS.iter().enumerate() {
+                let focused = edit.focus.is_focused(index);
+                let response = ui.add_sized(
+                    [width, ROW_HEIGHT],
+                    egui::Button::selectable(focused, *label),
+                );
+
+                if response.hovered() {
+                    edit.focus.focus(index);
+                }
+
+                // A click wins over the focus the field just gave up because of it.
+                if response.clicked() {
+                    event = Some(*action);
+                }
+            }
+        });
     });
 
     event
@@ -510,6 +574,19 @@ mod tests {
     #[test]
     fn renaming_has_no_command_of_its_own() {
         assert_eq!(action_cmd(SlotAction::Rename, 4), None);
+    }
+
+    /// A gamepad can't type, so both ways out have to be reachable by moving. Save
+    /// is focused to begin with, whichever side of the row it is drawn on.
+    #[test]
+    fn the_rename_buttons_answer_directional_input() {
+        let mut edit = RenameEdit::default();
+        edit.start("before the boss");
+
+        assert_eq!(edit.nav(NavAction::Confirm), Some(RenameEvent::Commit));
+        assert_eq!(edit.nav(NavAction::Left), None);
+        assert_eq!(edit.nav(NavAction::Confirm), Some(RenameEvent::Cancel));
+        assert_eq!(edit.nav(NavAction::Back), Some(RenameEvent::Cancel));
     }
 
     #[test]

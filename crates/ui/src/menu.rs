@@ -148,14 +148,13 @@ impl Menu {
                     None
                 }
             },
-            // The keyboard belongs to the text field, which egui drives itself;
-            // a gamepad can still back out of it.
+            // Typing belongs to the text field, which egui drives itself off the
+            // keyboard; the Save and Cancel buttons are here so a gamepad — whose
+            // events never reach egui — can still finish or drop the rename.
             Screen::StateRename(slot) => {
-                if action == NavAction::Back {
-                    self.screen = Screen::StateActions(slot);
-                }
+                let event = self.rename.nav(action)?;
 
-                None
+                self.finish_rename(slot, event)
             }
         }
     }
@@ -192,6 +191,23 @@ impl Menu {
         self.screen = Screen::States;
 
         states::action_cmd(action, slot)
+    }
+
+    /// Saving lands back in the list, where the new name shows; cancelling goes
+    /// back to the sheet the rename was started from.
+    fn finish_rename(&mut self, slot: usize, event: states::RenameEvent) -> Option<UiCmd> {
+        match event {
+            states::RenameEvent::Commit => {
+                self.screen = Screen::States;
+
+                Some(UiCmd::RenameState(slot, self.rename.take_text()))
+            }
+            states::RenameEvent::Cancel => {
+                self.screen = Screen::StateActions(slot);
+
+                None
+            }
+        }
     }
 
     /// Left/Right step the focused row's value instead of moving the highlight.
@@ -253,14 +269,11 @@ impl Menu {
                     out.extend(self.act_on_slot(action, slot, views));
                 }
             }
-            Screen::StateRename(slot) => match states::show_rename(root, slot, &mut self.rename) {
-                Some(states::RenameEvent::Commit) => {
-                    self.screen = Screen::States;
-                    out.push(UiCmd::RenameState(slot, self.rename.take_text()));
+            Screen::StateRename(slot) => {
+                if let Some(event) = states::show_rename(root, slot, &mut self.rename) {
+                    out.extend(self.finish_rename(slot, event));
                 }
-                Some(states::RenameEvent::Cancel) => self.screen = Screen::StateActions(slot),
-                None => {}
-            },
+            }
         }
     }
 
