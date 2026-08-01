@@ -65,6 +65,13 @@ impl StateMeta {
         }
     }
 
+    /// Whether this state came off `cart`. A state of unknown provenance counts as
+    /// a match: every one written before sidecars recorded it is, and they have to
+    /// keep loading quietly.
+    pub fn belongs_to(&self, cart: &CartId) -> bool {
+        self.cart == CartId::default() || self.cart == *cart
+    }
+
     /// When the state was written, from the sidecar if there is one and from the
     /// file itself for slots saved before sidecars existed.
     pub fn written_at(&self) -> Option<SystemTime> {
@@ -140,6 +147,27 @@ mod tests {
             stamped.written_at(),
             Some(UNIX_EPOCH + std::time::Duration::from_secs(1))
         );
+    }
+
+    #[test]
+    fn a_state_belongs_to_the_cart_it_came_off() {
+        let zelda = CartId {
+            title: "ZELDA".to_owned(),
+            global_checksum: 0x1234,
+        };
+        let patched = CartId {
+            global_checksum: 0x4321,
+            ..zelda.clone()
+        };
+        let meta = StateMeta {
+            cart: zelda.clone(),
+            ..Default::default()
+        };
+
+        assert!(meta.belongs_to(&zelda));
+        assert!(!meta.belongs_to(&patched));
+        // Written before the sidecar recorded a cart: nothing to disagree with.
+        assert!(StateMeta::default().belongs_to(&zelda));
     }
 
     /// Fields were added over time, so old sidecars must still parse.

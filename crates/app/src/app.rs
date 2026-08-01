@@ -7,7 +7,7 @@ use crate::input::handler::InputHandler;
 use crate::notification::Notifications;
 use crate::palette::LcdPalette;
 use crate::roms::RomsState;
-use crate::state_meta::StateMeta;
+use crate::state_meta::{CartId, StateMeta};
 use crate::state_shot::StateShot;
 use crate::video::shader::{next_shader_by_name, prev_shader_by_name};
 use crate::video::AppVideo;
@@ -440,6 +440,19 @@ where
                     log::error!("Failed load save_state: {}", save_state.unwrap_err());
                     return;
                 };
+
+                // A state from another dump or revision restores into ROM banks
+                // that don't match it, which shows up as the game misbehaving
+                // rather than as a failure to load. Say so, but still load: a
+                // different revision can be exactly what the user meant.
+                if let Ok(meta) = StateMeta::load_file(&name, &index) {
+                    let cart = CartId::of(&emu.runtime.cpu.clock.bus.cart);
+
+                    if !meta.belongs_to(&cart) {
+                        let msg = format!("Warning: state is from {}", meta.cart.title);
+                        self.notifications.add(msg);
+                    }
+                }
 
                 emu.load_save_state(save_state);
                 let colors = self
