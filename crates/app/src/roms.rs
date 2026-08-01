@@ -61,7 +61,14 @@ impl RomsState {
         Ok(self.loaded_rom_files.len())
     }
 
+    /// Stored absolute where the platform has real paths: a game launched as
+    /// `roms/game.gb` would otherwise point nowhere the next time the app starts
+    /// somewhere else, and would sit beside its own absolute self on the shelf.
+    /// What cannot be canonicalized — Android hands out `content://` URIs — is kept
+    /// as it came.
     pub fn insert_or_update(&mut self, path: PathBuf) {
+        let path = path.canonicalize().unwrap_or(path);
+
         self.opened_rom_paths.shift_remove(&path);
         self.opened_rom_paths.insert(path);
     }
@@ -87,6 +94,15 @@ impl RomsState {
         } else {
             Default::default()
         };
+
+        // Paths written before they were stored absolute, and any that have since
+        // been reached another way, settle here — otherwise a game keeps a second
+        // spelling of itself for good.
+        obj.opened_rom_paths = obj
+            .opened_rom_paths
+            .drain(..)
+            .map(|path| path.canonicalize().unwrap_or(path))
+            .collect();
 
         if let Some(path) = obj.selected_dir_path.take() {
             if let Err(err) = obj.load_from_dir(path, fs) {

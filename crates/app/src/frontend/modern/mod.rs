@@ -19,7 +19,7 @@ use crate::PlatformFileSystem;
 use core::cart::header::CgbFlag;
 use core::emu::state::SaveStateCmd;
 use core::ppu::framebuffer::FrameBuffer;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -220,17 +220,26 @@ impl ModernFrontend {
     /// The shelf is what has been played plus whatever else is in the chosen ROMs
     /// directory: played first and most recent leading, then the rest by name, so
     /// the order is the same on every run — the scan itself is unordered.
+    ///
+    /// One card per file *name*, not per path. Everything an app saves beside a game
+    /// — battery, states, metadata, cover, play time — goes by that name, so two
+    /// copies of a game in different folders already share all of it; shelving them
+    /// twice would only pretend otherwise. The played copy wins, and of those the
+    /// most recent.
     fn load_library<FS: PlatformFileSystem>(&mut self, ctx: &FrontendCtx<'_, FS>) {
-        self.paths = ctx.roms.iter_opened().cloned().collect();
-        let mut unplayed: Vec<PathBuf> = ctx
-            .roms
-            .iter_loaded(ctx.fs)
-            .into_iter()
-            .flatten()
-            .filter(|path| !self.paths.contains(path))
-            .collect();
+        let mut seen = HashSet::new();
+        let played = ctx.roms.iter_opened().cloned();
+        let mut unplayed: Vec<PathBuf> =
+            ctx.roms.iter_loaded(ctx.fs).into_iter().flatten().collect();
         unplayed.sort_by_key(|path| path.file_name().map(|name| name.to_ascii_lowercase()));
-        self.paths.append(&mut unplayed);
+
+        self.paths = played
+            .chain(unplayed)
+            .filter(|path| match path.file_name() {
+                Some(name) => seen.insert(name.to_owned()),
+                None => false,
+            })
+            .collect();
 
         self.entries = self
             .paths
