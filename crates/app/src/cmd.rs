@@ -23,8 +23,10 @@ pub enum AppCmd {
     RenameState(usize, String),
     /// Names a ROM of the library; an empty name goes back to its file name.
     RenameRom(PathBuf, String),
-    /// Asks for a cover picture for this ROM and stores it beside its metadata.
+    /// Asks for a cover picture for this ROM, however this platform asks.
     SetRomCover(PathBuf),
+    /// Stores this picture as that ROM's cover; the asking is already done.
+    UseRomCover(PathBuf, PathBuf),
     /// Takes a ROM's cover away.
     RemoveRomCover(PathBuf),
     /// Makes the screen of one of this ROM's states its cover.
@@ -32,7 +34,10 @@ pub enum AppCmd {
     SelectRom,
     Quit,
     ChangeConfig(ChangeConfigCmd),
+    /// Asks for a ROMs folder, however this platform asks.
     SelectRomsDir,
+    /// Shelves this folder's games; the asking is already done.
+    UseRomsDir(PathBuf),
     ReleaseButton(JoypadButton),
     PressButton(JoypadButton),
     SetFileBrowsePath(PathBuf),
@@ -59,12 +64,14 @@ impl AppCmd {
             AppCmd::RenameState(_, _) => "Rename State",
             AppCmd::RenameRom(_, _) => "Rename ROM",
             AppCmd::SetRomCover(_) => "Set Cover",
+            AppCmd::UseRomCover(_, _) => "Use Cover",
             AppCmd::RemoveRomCover(_) => "Remove Cover",
             AppCmd::SetCoverFromState(_, _) => "Cover From State",
             AppCmd::SelectRom => "Select ROM",
             AppCmd::Quit => "Quit",
             AppCmd::ChangeConfig(conf) => conf.name(),
             AppCmd::SelectRomsDir => "Select ROMs Dir",
+            AppCmd::UseRomsDir(_) => "Use ROMs Dir",
             AppCmd::ReleaseButton(_) => "Release Button",
             AppCmd::PressButton(_) => "Press Button",
             AppCmd::SetFileBrowsePath(_) => "Set File Browse Path",

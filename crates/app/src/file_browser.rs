@@ -13,6 +13,8 @@ pub struct FileBrowser {
 }
 
 impl FileBrowser {
+    /// An empty `extensions` walks folders alone — nothing else can be picked, so
+    /// nothing else is worth showing.
     pub fn new<P: AsRef<Path>>(
         path: P,
         page_size: usize,
@@ -30,6 +32,18 @@ impl FileBrowser {
         fm.refresh_entries()?;
 
         Ok(fm)
+    }
+
+    /// Points at a row, for a caller that keeps the selection itself and only needs
+    /// the walking.
+    pub fn select(&mut self, index: usize) {
+        if index < self.entries.len() {
+            self.selected_index = index;
+        }
+    }
+
+    pub fn has_parent(&self) -> bool {
+        self.current_dir.parent().is_some()
     }
 
     pub fn back(&mut self) -> std::io::Result<()> {
@@ -139,8 +153,10 @@ impl FileBrowser {
                     }
                 }
 
-                if path.is_dir() || self.extensions.is_empty() {
+                if path.is_dir() {
                     true
+                } else if self.extensions.is_empty() {
+                    false
                 } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     // check if extension matches one of the filters (case insensitive)
                     self.extensions.iter().any(|f| f.eq_ignore_ascii_case(ext))

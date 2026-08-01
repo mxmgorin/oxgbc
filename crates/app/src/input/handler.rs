@@ -1,7 +1,7 @@
 use crate::app::{App, AppState};
 use crate::cmd::{AppCmd, ChangeConfigCmd};
 use crate::config::AppConfig;
-use crate::frontend::Frontend;
+use crate::frontend::{BrowseTarget, Frontend};
 use crate::input::bindings::InputKind;
 use crate::input::emu::handle_emu_btn;
 use crate::input::gamepad::GamepadHandler;
@@ -169,18 +169,40 @@ impl InputHandler {
             AppCmd::DeleteState(index) => app.handle_delete_state(index),
             AppCmd::RenameState(index, name) => app.handle_rename_state(index, name),
             AppCmd::RenameRom(path, name) => app.handle_rename_rom(&path, name),
-            AppCmd::SetRomCover(path) => app.handle_set_rom_cover(&path),
+            AppCmd::SetRomCover(rom) => {
+                // Same rule as picking a game: only a picker this device's input can
+                // reach is worth opening.
+                if app.platform.fd.is_navigable() {
+                    app.ask_rom_cover(&rom);
+                } else {
+                    let from = app.roms.last_browse_dir_path.clone();
+                    app.frontend
+                        .open_browse(BrowseTarget::Cover(rom), from.as_deref());
+                }
+            }
+            AppCmd::UseRomCover(rom, image) => app.use_rom_cover(&rom, &image),
             AppCmd::RemoveRomCover(path) => app.handle_remove_rom_cover(&path),
             AppCmd::SetCoverFromState(path, index) => app.handle_cover_from_state(&path, index),
             AppCmd::SelectRom => {
-                if app.state == AppState::Paused {
-                    if let Some(path) = app.platform.fd.select_file(
-                        "Select Game Boy ROM",
-                        (&["*.gb", "*.gbc"], "Game Boy ROMs (*.gb, *.gbc)"),
-                    ) {
-                        if let Err(err) = app.load_cart_file(emu, Path::new(&path)) {
-                            log::warn!("Failed to load cart file: {err}");
-                        }
+                if app.state != AppState::Paused {
+                    return;
+                }
+
+                // Only a picker the device's own input can reach is worth opening;
+                // otherwise the app walks storage itself.
+                if !app.platform.fd.is_navigable() {
+                    let from = app.roms.last_browse_dir_path.clone();
+                    app.frontend.open_browse(BrowseTarget::Rom, from.as_deref());
+
+                    return;
+                }
+
+                if let Some(path) = app.platform.fd.select_file(
+                    "Select Game Boy ROM",
+                    (&["*.gb", "*.gbc"], "Game Boy ROMs (*.gb, *.gbc)"),
+                ) {
+                    if let Err(err) = app.load_cart_file(emu, Path::new(&path)) {
+                        log::warn!("Failed to load cart file: {err}");
                     }
                 }
             }
@@ -193,19 +215,18 @@ impl InputHandler {
             }
             AppCmd::Quit => app.state = AppState::Quitting,
             AppCmd::SelectRomsDir => {
+                if !app.platform.fd.is_navigable() {
+                    let from = app.roms.last_browse_dir_path.clone();
+                    app.frontend.open_browse(BrowseTarget::Dir, from.as_deref());
+
+                    return;
+                }
+
                 if let Some(dir) = app.platform.fd.select_dir("Select ROMs Folder") {
-                    let result = app.roms.load_from_dir(&dir, &app.platform.fs);
-
-                    let Ok(count) = result else {
-                        log::error!("Failed to load ROMs: {}", result.unwrap_err());
-                        return;
-                    };
-
-                    // The shelf lists this directory now, so it has to be rebuilt.
-                    app.frontend.request_update();
-                    app.notifications.add(format!("Found {count} ROMs"));
+                    app.use_roms_dir(Path::new(&dir));
                 }
             }
+            AppCmd::UseRomsDir(dir) => app.use_roms_dir(&dir),
             AppCmd::ChangeConfig(cmd) => {
                 match cmd {
                     ChangeConfigCmd::Volume(x) => app.change_volume(emu, x),

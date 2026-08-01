@@ -20,6 +20,11 @@ impl PlatformFileDialog for AndroidFileDialog {
         uri
     }
 
+    /// A system screen, driven by whatever drives the rest of the device.
+    fn is_navigable(&self) -> bool {
+        true
+    }
+
     fn select_dir(&mut self, _title: &str) -> Option<String> {
         log::info!("select_dir");
         show_android_directory_picker();

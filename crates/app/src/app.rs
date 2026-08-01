@@ -577,6 +577,20 @@ where
             .add(format!("Cover set from state {index}"));
     }
 
+    /// Shelves what is in the folder, whichever way it was chosen.
+    pub fn use_roms_dir(&mut self, dir: &Path) {
+        let result = self.roms.load_from_dir(dir, &self.platform.fs);
+
+        let Ok(count) = result else {
+            log::error!("Failed to load ROMs: {}", result.unwrap_err());
+            return;
+        };
+
+        // The shelf lists this directory now, so it has to be rebuilt.
+        self.frontend.request_update();
+        self.notifications.add(format!("Found {count} ROMs"));
+    }
+
     pub fn handle_remove_rom_cover(&mut self, rom: &Path) {
         let Some(game) = self.platform.fs.get_file_name(rom) else {
             log::error!("Failed remove_rom_cover: filesystem.get_file_name: None");
@@ -592,24 +606,27 @@ where
         self.notifications.add(format!("Cover removed from {game}"));
     }
 
-    /// Asks for the picture and imports it; the dialog is the platform's, so this
-    /// cannot live on the UI side.
-    pub fn handle_set_rom_cover(&mut self, path: &Path) {
-        let Some(game) = self.platform.fs.get_file_name(path) else {
-            log::error!("Failed set_rom_cover: filesystem.get_file_name: None");
-            return;
-        };
+    /// Asks through the platform's own dialog. Devices without one walk storage in
+    /// the app instead, and come back with [`Self::use_rom_cover`].
+    pub fn ask_rom_cover(&mut self, rom: &Path) {
         let picked = self.platform.fd.select_file(
             "Select cover image",
             (&["*.png", "*.jpg", "*.jpeg"], "Images (*.png, *.jpg)"),
         );
 
-        let Some(picked) = picked else {
+        if let Some(picked) = picked {
+            self.use_rom_cover(rom, Path::new(&picked));
+        }
+    }
+
+    pub fn use_rom_cover(&mut self, rom: &Path, image: &Path) {
+        let Some(game) = self.platform.fs.get_file_name(rom) else {
+            log::error!("Failed use_rom_cover: filesystem.get_file_name: None");
             return;
         };
 
-        if let Err(err) = rom_cover::import(&game, Path::new(&picked)) {
-            log::error!("Failed set_rom_cover: {err}");
+        if let Err(err) = rom_cover::import(&game, image) {
+            log::error!("Failed use_rom_cover: {err}");
             self.notifications.add("Failed to read that image");
             return;
         }

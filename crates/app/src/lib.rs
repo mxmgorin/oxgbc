@@ -247,6 +247,14 @@ impl AppConfigFile {
 pub trait PlatformFileDialog {
     fn select_file(&mut self, title: &str, filter: (&[&str], &str)) -> Option<String>;
     fn select_dir(&mut self, title: &str) -> Option<String>;
+
+    /// Whether this platform's own picker can be reached the way the app is driven.
+    /// Android's is a system screen a gamepad walks like any other; a desktop dialog
+    /// wants a pointer, and a build without one has nothing at all — those fall back
+    /// to walking storage inside the app.
+    fn is_navigable(&self) -> bool {
+        false
+    }
 }
 
 pub struct AppPlatform<FS, FD>

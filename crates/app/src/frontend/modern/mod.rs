@@ -2,12 +2,14 @@
 //! owns the platform half — building the view models from app state and turning
 //! the UI's requests back into [`AppCmd`]s.
 
+mod browse;
 mod settings;
 mod states;
 
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
-use crate::frontend::{Frontend, FrontendCtx, NavAction};
+use crate::file_browser::FileBrowser;
+use crate::frontend::{BrowseTarget, Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
 use crate::rom_cover;
 use crate::rom_meta::RomMeta;
@@ -45,6 +47,10 @@ pub struct ModernFrontend {
     loaded: Option<PathBuf>,
     /// Bumped for every rebuild, so the UI can tell one view from the next.
     version: u64,
+    /// The storage walk, alive only while its screen is up.
+    walk: Option<FileBrowser>,
+    walk_target: BrowseTarget,
+    browse: ui::BrowseView,
     /// Filled by pointer input during `render`, drained by the app afterwards.
     pending: VecDeque<AppCmd>,
     stale: bool,
@@ -59,6 +65,16 @@ impl Frontend for ModernFrontend {
             stale: true,
             ..Default::default()
         }
+    }
+
+    fn open_browse(&mut self, target: BrowseTarget, from: Option<&Path>) {
+        // Where this session's walk stopped, else where the app remembers one
+        // stopping — the same place the text menu picks up from.
+        let last = self.walk.as_ref().map(|walk| walk.current_dir.clone());
+        self.walk_target = target;
+        self.walk = browse::start(&self.walk_target, last.as_deref().or(from));
+        self.browse = browse::view(self.walk.as_ref(), &self.walk_target);
+        self.menu.open_browse();
     }
 
     fn nav<FS: PlatformFileSystem>(
@@ -77,6 +93,7 @@ impl Frontend for ModernFrontend {
             settings: &self.settings,
             states: &self.states,
             rom_states: &self.rom_states,
+            browse: &self.browse,
         };
         let cmd = self.menu.nav(into_nav(action), &views)?;
 
@@ -118,6 +135,7 @@ impl Frontend for ModernFrontend {
             settings: &self.settings,
             states: &self.states,
             rom_states: &self.rom_states,
+            browse: &self.browse,
         };
         let menu = &mut self.menu;
         let mut cmds = Vec::new();
@@ -229,7 +247,31 @@ impl ModernFrontend {
             .collect();
     }
 
-    fn app_cmd(&self, cmd: ui::UiCmd, config: &AppConfig) -> Option<AppCmd> {
+    /// A folder only moves the walk along; a file ends it, and what it ends as
+    /// depends on what the walk was for.
+    fn browse_enter(&mut self, index: usize) -> Option<AppCmd> {
+        let walk = self.walk.as_mut()?;
+        let picked = browse::enter(walk, index);
+        self.browse = browse::view(self.walk.as_ref(), &self.walk_target);
+
+        let picked = picked?;
+        self.menu.close_browse();
+
+        // Remembered for the next walk, this run and the next.
+        if let Some(walk) = self.walk.as_ref() {
+            self.pending
+                .push_back(AppCmd::SetFileBrowsePath(walk.current_dir.clone()));
+        }
+
+        match &self.walk_target {
+            BrowseTarget::Rom => Some(AppCmd::LoadFile(picked)),
+            BrowseTarget::Cover(rom) => Some(AppCmd::UseRomCover(rom.clone(), picked)),
+            // A folder walk shows no files to end on.
+            BrowseTarget::Dir => None,
+        }
+    }
+
+    fn app_cmd(&mut self, cmd: ui::UiCmd, config: &AppConfig) -> Option<AppCmd> {
         Some(match cmd {
             ui::UiCmd::Setting { id, step } => return settings::apply(id, step, config),
             ui::UiCmd::LaunchRom(index) => AppCmd::LoadFile(self.paths.get(index)?.clone()),
@@ -242,6 +284,13 @@ impl ModernFrontend {
                 AppCmd::RenameRom(self.paths.get(index)?.clone(), name)
             }
             ui::UiCmd::AddRom => AppCmd::SelectRom,
+            ui::UiCmd::BrowseEnter(index) => return self.browse_enter(index),
+            ui::UiCmd::BrowseChooseDir => {
+                let dir = self.walk.as_ref()?.current_dir.clone();
+                self.menu.close_browse();
+
+                AppCmd::UseRomsDir(dir)
+            }
             ui::UiCmd::SetRomCover(index) => AppCmd::SetRomCover(self.paths.get(index)?.clone()),
             ui::UiCmd::RemoveRomCover(index) => {
                 AppCmd::RemoveRomCover(self.paths.get(index)?.clone())

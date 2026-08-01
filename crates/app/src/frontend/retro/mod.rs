@@ -28,6 +28,14 @@ impl Frontend for RetroFrontend {
         }
     }
 
+    /// The text menu walks files on its own screen, reached from its own rows.
+    fn open_browse(
+        &mut self,
+        _target: crate::frontend::BrowseTarget,
+        _from: Option<&std::path::Path>,
+    ) {
+    }
+
     fn nav<FS: PlatformFileSystem>(
         &mut self,
         action: NavAction,

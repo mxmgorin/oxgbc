@@ -17,6 +17,7 @@ use crate::roms::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
 use core::ppu::framebuffer::FrameBuffer;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Modern wins when both features are on; every `frontend-modern` cfg elsewhere
@@ -50,8 +51,26 @@ pub struct FrontendCtx<'a, FS: PlatformFileSystem> {
     pub palettes: &'a [LcdPalette],
 }
 
+/// What a storage walk is for. Defined here as well as in `ui` for the same reason
+/// as [`NavAction`]: this seam must stay free of any UI toolkit. Not `Copy` — a
+/// cover walk carries the cart it is for.
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
+pub enum BrowseTarget {
+    #[default]
+    Rom,
+    Dir,
+    /// A cover picture for this ROM.
+    Cover(PathBuf),
+}
+
 pub trait Frontend {
     fn new(roms: &RomsState) -> Self;
+
+    /// Show the in-app storage walk, for platforms whose own picker cannot be
+    /// reached the way the app is driven, starting `from` wherever the last walk
+    /// stopped. A frontend with its own file screen — the text menu has one —
+    /// ignores this.
+    fn open_browse(&mut self, target: BrowseTarget, from: Option<&Path>);
 
     /// Move/activate the UI. `None` when the action only changed selection.
     fn nav<FS: PlatformFileSystem>(

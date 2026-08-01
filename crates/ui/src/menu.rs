@@ -4,6 +4,8 @@
 //! moving between them never leaves this crate. Everything the platform has to
 //! act on comes back as a [`UiCmd`].
 
+use crate::browse::BrowseView;
+use crate::browse::{self, BrowsePick};
 use crate::cover::{self, CoverAction, CoverOffer};
 use crate::library::{self, library, LibraryEvent, LibraryFocus, LibraryPick, LibraryView};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
@@ -31,6 +33,11 @@ pub enum UiCmd {
     RenameRom(usize, String),
     /// Ask for a game to be picked off the disk and added to the shelf.
     AddRom,
+    /// Walk into what the browser's row `0`-based index holds: a folder to open, or
+    /// a game to take.
+    BrowseEnter(usize),
+    /// Take the folder the browser is standing in.
+    BrowseChooseDir,
     /// Ask for a cover picture for this cartridge.
     SetRomCover(usize),
     /// Take this cartridge's cover away.
@@ -56,6 +63,8 @@ pub struct Views<'a> {
     pub library: LibraryView<'a>,
     pub settings: &'a SettingsView,
     pub states: &'a StatesView,
+    /// Where the storage walk is, empty unless one is open.
+    pub browse: &'a BrowseView,
     /// The save states of the cart whose cover is being worked on, empty the rest
     /// of the time: reading them costs a stat per slot, so the platform only does
     /// it once a cover screen is open.
@@ -83,6 +92,9 @@ enum Screen {
     RomCover(usize),
     /// Which of the game's states to take a cover from.
     CoverFromState(usize),
+    /// Walking storage, because this platform's own picker cannot be reached the
+    /// way the app is driven.
+    Browse,
 }
 
 /// What picking a pause row does: hand the platform a command, or move on to the
@@ -131,6 +143,7 @@ pub struct Menu {
     /// another game's slots than the pause screens do, and one cache keyed by slot
     /// number would hand out the wrong picture.
     cover_states: GridFocus,
+    browse: GridFocus,
     cover_shots: crate::image::TextureCache,
     shots: crate::image::TextureCache,
     /// Covers uploaded for the shelf, which is a different set from the shots.
@@ -156,6 +169,26 @@ impl Menu {
             Screen::StateActions(slot) | Screen::StateRename(slot) => Some(slot),
             _ => None,
         }
+    }
+
+    /// Shows the storage walk. Only the platform can decide it is needed: it is the
+    /// one that knows whether this device has a picker of its own.
+    pub fn open_browse(&mut self) {
+        self.browse = GridFocus::default();
+        self.screen = Screen::Browse;
+    }
+
+    /// Called when the walk is over — a game taken, or a folder chosen.
+    pub fn close_browse(&mut self) {
+        if self.screen == Screen::Browse {
+            self.screen = Screen::Library;
+        }
+    }
+
+    /// Whether the walk is what is on screen, so the platform knows to keep its
+    /// listing up to date.
+    pub fn browsing(&self) -> bool {
+        self.screen == Screen::Browse
     }
 
     /// The cart whose cover is being worked on, so the platform knows whose save
@@ -243,6 +276,21 @@ impl Menu {
                 }
                 FocusEvent::Back => {
                     self.screen = Screen::RomActions(index);
+                    None
+                }
+            },
+            Screen::Browse => match self.browse.nav(action)? {
+                FocusEvent::Activate(row) => {
+                    let pick = browse::pick(views.browse, row)?;
+
+                    Some(match pick {
+                        BrowsePick::Enter(index) => UiCmd::BrowseEnter(index),
+                        BrowsePick::ChooseDir => UiCmd::BrowseChooseDir,
+                    })
+                }
+                // Backing out leaves the walk; the way up is a row of its own.
+                FocusEvent::Back => {
+                    self.screen = Screen::Library;
                     None
                 }
             },
@@ -517,6 +565,14 @@ impl Menu {
 
                 if let Some(action) = picked {
                     out.extend(self.act_on_cover(action, index));
+                }
+            }
+            Screen::Browse => {
+                if let Some(pick) = browse::show(root, views.browse, &mut self.browse) {
+                    out.push(match pick {
+                        BrowsePick::Enter(index) => UiCmd::BrowseEnter(index),
+                        BrowsePick::ChooseDir => UiCmd::BrowseChooseDir,
+                    });
                 }
             }
             Screen::CoverFromState(index) => {
