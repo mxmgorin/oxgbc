@@ -33,6 +33,7 @@ pub mod frontend;
 pub mod input;
 pub mod notification;
 pub mod palette;
+pub mod rom_meta;
 pub mod roms;
 pub mod state_meta;
 pub mod state_shot;

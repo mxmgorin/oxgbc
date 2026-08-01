@@ -9,15 +9,14 @@ use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::frontend::{Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
+use crate::rom_meta::RomMeta;
 use crate::roms::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
-use core::cart::header::{CartHeader, CgbFlag};
+use core::cart::header::CgbFlag;
 use core::emu::state::SaveStateCmd;
 use core::ppu::framebuffer::FrameBuffer;
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -171,9 +170,13 @@ impl ModernFrontend {
         self.entries = self
             .paths
             .iter()
-            .map(|path| ui::RomEntry {
-                title: title_of(path),
-                kind: kind_of(path),
+            .map(|path| {
+                let meta = rom_meta(path);
+
+                ui::RomEntry {
+                    title: title_of(path, &meta),
+                    kind: kind_of(meta.cgb),
+                }
             })
             .collect();
     }
@@ -193,7 +196,23 @@ impl ModernFrontend {
     }
 }
 
-fn title_of(path: &Path) -> String {
+/// The file name is what every sidecar goes by. Taken from the path rather than
+/// through `PlatformFileSystem`, like the rest of this frontend's file handling:
+/// it is the desktop and web builds that run it.
+fn rom_meta(path: &Path) -> RomMeta {
+    let Some(name) = path.file_name().map(|name| name.to_string_lossy()) else {
+        return RomMeta::default();
+    };
+
+    RomMeta::load_or_create(path, &name)
+}
+
+/// The user's name for the cart, or the file's own when it has none.
+fn title_of(path: &Path, meta: &RomMeta) -> String {
+    if !meta.name.is_empty() {
+        return meta.name.clone();
+    }
+
     path.file_stem()
         .unwrap_or_default()
         .to_string_lossy()
@@ -201,21 +220,13 @@ fn title_of(path: &Path) -> String {
 }
 
 /// Nintendo shipped the three shells by CGB support, so the header decides which
-/// cart is drawn. Read straight off disk for now — zipped ROMs would have to be
-/// inflated, and the result belongs in a cache with the rest of the ROM metadata.
-fn kind_of(path: &Path) -> ui::CartKind {
-    match read_cgb_flag(path).unwrap_or_default() {
+/// cart is drawn. It comes from the sidecar, which read it off the ROM once.
+fn kind_of(cgb: CgbFlag) -> ui::CartKind {
+    match cgb {
         CgbFlag::DmgOnly => ui::CartKind::Dmg,
         CgbFlag::CgbEnhanced => ui::CartKind::CgbCompatible,
         CgbFlag::CgbOnly => ui::CartKind::CgbOnly,
     }
-}
-
-fn read_cgb_flag(path: &Path) -> Option<CgbFlag> {
-    let mut header = [0; CartHeader::END];
-    File::open(path).ok()?.read_exact(&mut header).ok()?;
-
-    Some(CartHeader::parse_cgb_flag(&header))
 }
 
 fn into_nav(action: NavAction) -> ui::NavAction {

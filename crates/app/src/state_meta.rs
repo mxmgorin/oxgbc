@@ -51,6 +51,15 @@ impl CartId {
             global_checksum: CartHeader::parse_global_checksum(cart.data.rom()),
         }
     }
+
+    /// From the header alone, for a ROM that is only being catalogued rather than
+    /// played. Both fields live inside [`CartHeader::END`].
+    pub fn of_header(header: &[u8]) -> Self {
+        Self {
+            title: CartHeader::parse_title(header),
+            global_checksum: CartHeader::parse_global_checksum(header),
+        }
+    }
 }
 
 impl StateMeta {
