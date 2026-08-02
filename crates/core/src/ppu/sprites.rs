@@ -90,6 +90,11 @@ impl SpriteFetcher {
         let mut fetched_sprites_count = 0;
         let cur_y = lcd.ly.wrapping_add(TILE_BIT_SIZE as u8);
         let sprite_height = lcd.control.get_obj_height();
+        // Bits 0-3 of an OAM flag byte are CGB attributes, and a DMG game leaves
+        // whatever it likes in them — ZAS sets bit 3 on every sprite. Outside CGB
+        // mode the hardware ignores them and takes the tile from bank 0, which is
+        // the only bank such a game ever wrote.
+        let cgb_attrs = lcd.is_cgb_mode();
 
         for i in 0..self.line_sprites_count {
             let oam = unsafe { *self.line_sprites.get_unchecked(i) };
@@ -121,7 +126,11 @@ impl SpriteFetcher {
                 let addr = TILE_SET_DATA_1_START
                     .wrapping_add(tile_index as u16 * TILE_BIT_SIZE)
                     .wrapping_add(tile_y as u16);
-                let vram_bank = oam.flags.read_cgb_vram_bank();
+                let vram_bank = if cgb_attrs {
+                    oam.flags.read_cgb_vram_bank()
+                } else {
+                    0
+                };
                 let tile_line = vram.read_tile_line_from_bank(vram_bank, addr);
 
                 unsafe {
@@ -284,5 +293,73 @@ pub fn is_show_obj(
 
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bank 1 holds a different line than bank 0, so fetching the wrong one shows up
+    /// as the wrong bytes rather than merely as a blank sprite.
+    const BANK0_LINE: (u8, u8) = (0xF0, 0x0F);
+    const BANK1_LINE: (u8, u8) = (0xAA, 0x55);
+    /// Line 0 of tile 1, which is where the sprite below points.
+    const TILE_ADDR: u16 = TILE_SET_DATA_1_START + TILE_BIT_SIZE;
+
+    fn vram() -> VideoRam {
+        let mut vram = VideoRam::default();
+
+        for (bank, (byte0, byte1)) in [(0, BANK0_LINE), (1, BANK1_LINE)] {
+            vram.write_bank_number(bank);
+            vram.write(TILE_ADDR, byte0);
+            vram.write(TILE_ADDR + 1, byte1);
+        }
+
+        vram
+    }
+
+    /// One sprite on line 0 at the left edge, with bit 3 of its flags set — the CGB
+    /// "tile from bank 1" attribute, and junk on a DMG.
+    fn fetcher() -> SpriteFetcher {
+        let mut fetcher = SpriteFetcher::default();
+        fetcher.line_sprites[0] = OamEntry {
+            y: 16,
+            x: 8,
+            tile_index: 1,
+            flags: TileFlags::from(0b0000_1000),
+        };
+        fetcher.line_sprites_count = 1;
+
+        fetcher
+    }
+
+    fn fetched_line(model: GbModel, dmg_compat: bool) -> (u8, u8) {
+        let mut lcd = Lcd::new([PixelColor::default(); 4], model);
+        lcd.dmg_compat = dmg_compat;
+        let mut fetcher = fetcher();
+        fetcher.fetch(&lcd, &vram(), 0, 0);
+
+        assert_eq!(
+            fetcher.fetched_sprites_count, 1,
+            "the sprite was not fetched"
+        );
+        let line = fetcher.fetched_sprites[0].tile_line;
+
+        (line.byte0, line.byte1)
+    }
+
+    #[test]
+    fn a_cgb_game_takes_the_bank_its_attribute_asks_for() {
+        assert_eq!(fetched_line(GbModel::Cgb, false), BANK1_LINE);
+    }
+
+    /// The regression this guards: a DMG game leaves junk in the CGB attribute bits
+    /// (ZAS sets bit 3 on every sprite), and reading bank 1 for it hands back the
+    /// blank bank such a game never wrote — every sprite disappears.
+    #[test]
+    fn outside_cgb_mode_the_bank_attribute_is_ignored() {
+        assert_eq!(fetched_line(GbModel::Dmg, false), BANK0_LINE);
+        assert_eq!(fetched_line(GbModel::Cgb, true), BANK0_LINE);
     }
 }
