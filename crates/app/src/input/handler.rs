@@ -1,18 +1,47 @@
 use crate::app::{App, AppState};
-use crate::cmd::{AppCmd, ChangeConfigCmd};
+use crate::cmd::{AppCmd, BindTarget, ChangeConfigCmd};
 use crate::config::AppConfig;
-use crate::frontend::{BrowseTarget, Frontend};
-use crate::input::bindings::InputKind;
+use crate::frontend::{BrowseTarget, Capture, Frontend};
+use crate::input::bindings::{BindableInput, InputBindings, InputIndex, InputKind};
 use crate::input::emu::handle_emu_btn;
 use crate::input::gamepad::GamepadHandler;
 use crate::input::keyboard::handle_key;
 use crate::{PlatformFileDialog, PlatformFileSystem};
 use core::emu::state::EmuState;
 use core::emu::Emu;
-use sdl2::controller::GameController;
+use sdl2::controller::{Button, GameController};
 use sdl2::event::Event;
 use sdl2::{EventPump, GameControllerSubsystem, Sdl};
 use std::path::Path;
+
+/// Points one input at one action, on whichever device's table it belongs to.
+///
+/// Both directions are cleared first: the action loses whatever else used to reach
+/// it, and the input loses whatever else it used to do — otherwise a key rebound
+/// from A to the menu would still release A when let go.
+fn rebind<I: BindableInput>(
+    bindings: &mut InputBindings<I>,
+    index: InputIndex,
+    target: BindTarget,
+) {
+    let Some(input) = index.into_input::<I>() else {
+        log::warn!("Failed to bind: invalid input index {index:?}");
+
+        return;
+    };
+
+    let (pressed, released) = target.cmds();
+    bindings.clear_cmd(&pressed);
+    bindings.bind_cmd(input, true, pressed);
+
+    match released {
+        Some(released) => {
+            bindings.clear_cmd(&released);
+            bindings.bind_cmd(input, false, released);
+        }
+        None => bindings.unbind(input, false),
+    }
+}
 
 pub struct InputHandler {
     event_pump: EventPump,
@@ -71,36 +100,66 @@ impl InputHandler {
                 }
                 Event::KeyDown {
                     scancode: Some(sc), ..
-                } => {
-                    if let Some(cmd) = app.frontend.capture_bind(sc, true) {
-                        self.handle_cmd(app, emu, cmd);
-                    } else {
+                } => match app.frontend.capture_bind(sc, true) {
+                    Capture::Took(cmd) => {
+                        if let Some(cmd) = cmd {
+                            self.handle_cmd(app, emu, cmd);
+                        }
+                    }
+                    Capture::Pass => {
                         if let Some(cmd) = handle_key(&app.config.input, sc, true) {
                             self.handle_cmd(app, emu, cmd);
                         }
                     }
-                }
+                },
+                // Releases go through the capture too, or a combo would never notice
+                // its first button being let go before the second arrived.
                 Event::KeyUp {
                     scancode: Some(sc), ..
-                } => {
-                    if let Some(cmd) = handle_key(&app.config.input, sc, false) {
-                        self.handle_cmd(app, emu, cmd);
+                } => match app.frontend.capture_bind(sc, false) {
+                    Capture::Took(cmd) => {
+                        if let Some(cmd) = cmd {
+                            self.handle_cmd(app, emu, cmd);
+                        }
                     }
-                }
+                    Capture::Pass => {
+                        if let Some(cmd) = handle_key(&app.config.input, sc, false) {
+                            self.handle_cmd(app, emu, cmd);
+                        }
+                    }
+                },
                 Event::ControllerButtonDown { button, .. } => {
-                    if let Some(evt) =
-                        self.gamepad_handler
-                            .handle_button(&app.config.input, button, true)
-                    {
-                        self.handle_cmd(app, emu, evt);
+                    match app.frontend.capture_bind(button, true) {
+                        Capture::Took(cmd) => {
+                            if let Some(cmd) = cmd {
+                                self.handle_cmd(app, emu, cmd);
+                            }
+                        }
+                        Capture::Pass => {
+                            if let Some(evt) =
+                                self.gamepad_handler
+                                    .handle_button(&app.config.input, button, true)
+                            {
+                                self.handle_cmd(app, emu, evt);
+                            }
+                        }
                     }
                 }
                 Event::ControllerButtonUp { button, .. } => {
-                    if let Some(evt) =
-                        self.gamepad_handler
-                            .handle_button(&app.config.input, button, false)
-                    {
-                        self.handle_cmd(app, emu, evt);
+                    match app.frontend.capture_bind(button, false) {
+                        Capture::Took(cmd) => {
+                            if let Some(cmd) = cmd {
+                                self.handle_cmd(app, emu, cmd);
+                            }
+                        }
+                        Capture::Pass => {
+                            if let Some(evt) =
+                                self.gamepad_handler
+                                    .handle_button(&app.config.input, button, false)
+                            {
+                                self.handle_cmd(app, emu, evt);
+                            }
+                        }
                     }
                 }
                 Event::JoyAxisMotion {
@@ -384,42 +443,37 @@ impl InputHandler {
                     self.handle_cmd(app, emu, cmd);
                 }
             }
-            AppCmd::BindInput(bind_cmd) => match bind_cmd.input_kind {
-                InputKind::Keyboard => {
-                    if let Some(sc) = bind_cmd.input_index.into_input() {
-                        match bind_cmd.target {
-                            crate::cmd::BindTarget::Buttons(buttons) => {
-                                if buttons.len() == 1 {
-                                    app.config.input.bindings.keyboard.bind_btn(sc, buttons[0]);
-                                } else {
-                                    app.config.input.bindings.keyboard.bind_macro(sc, buttons);
-                                }
-                            }
-                            crate::cmd::BindTarget::Cmds(cmds) => {
-                                app.config.input.bindings.keyboard.bind_cmd(
-                                    sc,
-                                    true,
-                                    *cmds.pressed,
-                                );
+            AppCmd::BindInput(bind_cmd) => {
+                let bindings = &mut app.config.input.bindings;
+                let index = bind_cmd.input_index;
 
-                                if let Some(released) = cmds.released {
-                                    app.config
-                                        .input
-                                        .bindings
-                                        .keyboard
-                                        .bind_cmd(sc, false, *released);
-                                }
-                            }
-                        }
-                    } else {
-                        log::warn!(
-                            "Failed to bind key: invalid index {:?}",
-                            bind_cmd.input_index
-                        );
+                match bind_cmd.input_kind {
+                    InputKind::Keyboard => rebind(&mut bindings.keyboard, index, bind_cmd.target),
+                    InputKind::Gamepad => {
+                        rebind(&mut bindings.gamepad.buttons, index, bind_cmd.target)
                     }
                 }
-                InputKind::Gamepad => {}
-            },
+
+                app.frontend.request_update();
+            }
+            AppCmd::BindCombo(bind_cmd) => {
+                let buttons = (
+                    Button::from_code(bind_cmd.first),
+                    Button::from_code(bind_cmd.second),
+                );
+                let (Some(first), Some(second)) = buttons else {
+                    log::warn!("Failed to bind combo: unknown button code");
+
+                    return;
+                };
+                // A combo fires on the press and has no release of its own, so only
+                // the pressed command can ever reach it.
+                let (pressed, _) = bind_cmd.target.cmds();
+                let combos = &mut app.config.input.bindings.gamepad.combo;
+                combos.clear_cmd(&pressed);
+                combos.add_cmd(first, second, pressed);
+                app.frontend.request_update();
+            }
             AppCmd::ToggleDebug => {
                 #[cfg(feature = "debug")]
                 emu.runtime.toggle_debug();
@@ -447,5 +501,83 @@ impl InputHandler {
                 app.render_framebuffer(emu);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::auxiliary::joypad::JoypadButton;
+    use sdl2::keyboard::Scancode;
+
+    fn buttons(button: JoypadButton) -> BindTarget {
+        BindTarget::Buttons(vec![button].into_boxed_slice())
+    }
+
+    fn bind_to(bindings: &mut InputBindings<Scancode>, key: Scancode, target: BindTarget) {
+        rebind(bindings, InputIndex::new(key, true), target);
+    }
+
+    /// The point of rebinding from a settings row: the row shows one binding, so the
+    /// input it used to be on has to stop working.
+    #[test]
+    fn rebinding_moves_an_action_rather_than_adding_to_it() {
+        let mut bindings = InputBindings::<Scancode>::default();
+        bindings.bind_btn(Scancode::Up, JoypadButton::Up);
+
+        bind_to(&mut bindings, Scancode::W, buttons(JoypadButton::Up));
+
+        assert_eq!(
+            bindings.get_cmd(Scancode::W, true),
+            Some(&AppCmd::PressButton(JoypadButton::Up))
+        );
+        assert_eq!(
+            bindings.get_cmd(Scancode::W, false),
+            Some(&AppCmd::ReleaseButton(JoypadButton::Up))
+        );
+        assert_eq!(bindings.get_cmd(Scancode::Up, true), None, "the old key");
+        assert_eq!(bindings.get_cmd(Scancode::Up, false), None);
+    }
+
+    /// The other direction: whatever the captured input used to do, it stops doing.
+    #[test]
+    fn a_rebound_input_keeps_nothing_of_what_it_did_before() {
+        let mut bindings = InputBindings::<Scancode>::default();
+        bindings.bind_btn(Scancode::X, JoypadButton::A);
+
+        bind_to(
+            &mut bindings,
+            Scancode::X,
+            BindTarget::Cmds(crate::cmd::BindCmds::new(AppCmd::ToggleMenu, None)),
+        );
+
+        assert_eq!(
+            bindings.get_cmd(Scancode::X, true),
+            Some(&AppCmd::ToggleMenu)
+        );
+        // A target with no release command must leave the release slot empty, or the
+        // key would still be letting go of A.
+        assert_eq!(bindings.get_cmd(Scancode::X, false), None);
+    }
+
+    /// A diagonal is a macro, and a macro is a different command from the plain
+    /// button — rebinding one must not disturb the other.
+    #[test]
+    fn a_diagonal_and_its_parts_are_bound_apart() {
+        let mut bindings = InputBindings::<Scancode>::default();
+        bindings.bind_btn(Scancode::Up, JoypadButton::Up);
+
+        bind_to(
+            &mut bindings,
+            Scancode::Y,
+            BindTarget::Buttons(vec![JoypadButton::Up, JoypadButton::Left].into_boxed_slice()),
+        );
+
+        assert_eq!(
+            bindings.get_cmd(Scancode::Up, true),
+            Some(&AppCmd::PressButton(JoypadButton::Up)),
+            "the plain button is untouched"
+        );
+        assert!(bindings.get_cmd(Scancode::Y, true).is_some());
     }
 }

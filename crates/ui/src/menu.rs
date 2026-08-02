@@ -11,7 +11,7 @@ use crate::library::{self, library, LibraryEvent, LibraryFocus, LibraryPick, Lib
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
-use crate::settings::{row_at, settings, SettingId, SettingsView};
+use crate::settings::{row_at, settings, Control, PageId, SettingId, SettingsView, ROOT_PAGE};
 use crate::states::{self, RowPick, StatesView};
 use crate::theme::WIDTH_SHEET;
 use egui::Vec2;
@@ -78,7 +78,8 @@ enum Screen {
     Library,
     /// Over the dimmed game, when the UI is opened mid-play.
     Pause,
-    Settings,
+    /// One page of the settings; the rest are reached from its rows.
+    Settings(PageId),
     /// The game's save-state slots.
     States,
     /// What one slot, picked from the list, can be used for.
@@ -122,7 +123,7 @@ const PAUSE_ITEMS: [(&str, PauseAction); 6] = [
     ("Save states", PauseAction::Open(Screen::States)),
     ("Restart", PauseAction::Cmd(UiCmd::RestartRom)),
     ("Library", PauseAction::Open(Screen::Library)),
-    ("Settings", PauseAction::Open(Screen::Settings)),
+    ("Settings", PauseAction::Open(Screen::Settings(ROOT_PAGE))),
     ("Quit", PauseAction::Cmd(UiCmd::Quit)),
 ];
 
@@ -134,6 +135,10 @@ pub struct Menu {
     library: LibraryFocus,
     pause: GridFocus,
     settings: GridFocus,
+    /// The settings pages walked through to reach the one on screen, each with the
+    /// row it was left on, so backing out lands where it was opened from. Always
+    /// empty outside the settings: the last Back is what leaves them.
+    settings_trail: Vec<(PageId, GridFocus)>,
     states: GridFocus,
     actions: GridFocus,
     /// The cart action sheet, which is a different list from the slot one.
@@ -160,6 +165,13 @@ impl Menu {
             Screen::Library
         };
         self.opener = self.screen;
+
+        // Closing the UI from a settings page leaves a trail nothing will pop, since
+        // the settings open at their first page again.
+        if !self.settings_trail.is_empty() {
+            self.settings_trail.clear();
+            self.settings = GridFocus::default();
+        }
     }
 
     /// The slot the UI is working on, so the platform knows which screen to read.
@@ -221,7 +233,7 @@ impl Menu {
                 FocusEvent::Activate(index) => self.activate_pause(index),
                 FocusEvent::Back => Some(UiCmd::Resume),
             },
-            Screen::Settings => self.nav_settings(action, views.settings),
+            Screen::Settings(page) => self.nav_settings(action, page, views.settings),
             Screen::States => match self.states.nav(action)? {
                 FocusEvent::Activate(index) => {
                     let pick = states::pick(views.states, index)?;
@@ -375,7 +387,7 @@ impl Menu {
     fn library_event(&mut self, event: LibraryEvent) -> Option<UiCmd> {
         match event {
             LibraryEvent::OpenSettings => {
-                self.screen = Screen::Settings;
+                self.screen = Screen::Settings(ROOT_PAGE);
 
                 None
             }
@@ -472,7 +484,12 @@ impl Menu {
     }
 
     /// Left/Right step the focused row's value instead of moving the highlight.
-    fn nav_settings(&mut self, action: NavAction, view: &SettingsView) -> Option<UiCmd> {
+    fn nav_settings(
+        &mut self,
+        action: NavAction,
+        page: PageId,
+        view: &SettingsView,
+    ) -> Option<UiCmd> {
         let step = match action {
             NavAction::Left => -1,
             NavAction::Right => 1,
@@ -480,14 +497,25 @@ impl Menu {
         };
 
         if step != 0 {
-            let row = row_at(view, self.settings.index())?;
+            let row = row_at(view, page, self.settings.index())?;
+
+            // A row leading somewhere has no value to step.
+            if matches!(row.control, Control::Page(_)) {
+                return None;
+            }
 
             return Some(UiCmd::Setting { id: row.id, step });
         }
 
         match self.settings.nav(action)? {
             FocusEvent::Activate(index) => {
-                let row = row_at(view, index)?;
+                let row = row_at(view, page, index)?;
+
+                if let Control::Page(next) = row.control {
+                    self.open_settings_page(page, next);
+
+                    return None;
+                }
 
                 Some(UiCmd::Setting {
                     id: row.id,
@@ -495,9 +523,27 @@ impl Menu {
                 })
             }
             FocusEvent::Back => {
-                self.screen = self.opener;
+                self.leave_settings_page();
                 None
             }
+        }
+    }
+
+    fn open_settings_page(&mut self, from: PageId, to: PageId) {
+        self.settings_trail
+            .push((from, std::mem::take(&mut self.settings)));
+        self.screen = Screen::Settings(to);
+    }
+
+    /// Back to the page this one was opened from, or out of the settings when it
+    /// was opened from another screen.
+    fn leave_settings_page(&mut self) {
+        match self.settings_trail.pop() {
+            Some((page, focus)) => {
+                self.settings = focus;
+                self.screen = Screen::Settings(page);
+            }
+            None => self.screen = self.opener,
         }
     }
 
@@ -512,7 +558,13 @@ impl Menu {
                 }
             }
             Screen::Pause => self.pause_overlay(root, out),
-            Screen::Settings => settings(root, views.settings, &mut self.settings, out),
+            Screen::Settings(page) => {
+                let opened = settings(root, views.settings, page, &mut self.settings, out);
+
+                if let Some(next) = opened {
+                    self.open_settings_page(page, next);
+                }
+            }
             Screen::States => {
                 let picked = states::show(root, views.states, &mut self.states, &mut self.shots);
 
@@ -619,6 +671,20 @@ impl Menu {
         None
     }
 
+    #[cfg(test)]
+    fn on_settings_page(&self) -> Option<PageId> {
+        match self.screen {
+            Screen::Settings(page) => Some(page),
+            _ => None,
+        }
+    }
+
+    /// How many pages deep into the settings the screen is.
+    #[cfg(test)]
+    fn settings_depth(&self) -> usize {
+        self.settings_trail.len()
+    }
+
     fn pause_overlay(&mut self, root: &mut egui::Ui, out: &mut Vec<UiCmd>) {
         self.pause.sync(PAUSE_ITEMS.len(), 1);
         let size = Vec2::new(WIDTH_SHEET, overlay::rows_height(PAUSE_ITEMS.len()));
@@ -632,5 +698,153 @@ impl Menu {
         if let Some(index) = clicked {
             out.extend(self.activate_pause(index));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::{Page, Row, Section};
+
+    const CHILD_PAGE: PageId = 1;
+    /// What the child page's only row asks the platform for.
+    const CHILD_ROW: SettingId = 7;
+
+    /// A root whose one row leads to a page with one row of its own.
+    fn nested() -> SettingsView {
+        SettingsView {
+            pages: vec![
+                Page {
+                    title: "Settings".to_owned(),
+                    sections: vec![Section {
+                        title: "Input".to_owned(),
+                        rows: vec![Row {
+                            id: 0,
+                            label: "Keyboard".to_owned(),
+                            control: Control::Page(CHILD_PAGE),
+                        }],
+                    }],
+                },
+                Page {
+                    title: "Keyboard".to_owned(),
+                    sections: vec![Section {
+                        title: "Buttons".to_owned(),
+                        rows: vec![Row {
+                            id: CHILD_ROW,
+                            label: "Up".to_owned(),
+                            control: Control::Binding {
+                                current: "W".to_owned(),
+                                capturing: false,
+                            },
+                        }],
+                    }],
+                },
+            ],
+        }
+    }
+
+    fn views(settings: &SettingsView) -> Views<'_> {
+        static EMPTY_STATES: std::sync::LazyLock<StatesView> =
+            std::sync::LazyLock::new(StatesView::default);
+        static EMPTY_BROWSE: std::sync::LazyLock<BrowseView> =
+            std::sync::LazyLock::new(BrowseView::default);
+
+        Views {
+            library: LibraryView {
+                entries: &[],
+                version: 0,
+            },
+            settings,
+            states: &EMPTY_STATES,
+            rom_states: &EMPTY_STATES,
+            browse: &EMPTY_BROWSE,
+        }
+    }
+
+    /// Opens the settings the way the pause overlay does, from a fresh menu whose
+    /// overlay focus is still on the first row.
+    fn on_settings(view: &SettingsView) -> Menu {
+        let mut menu = Menu::default();
+        menu.open(true);
+        // A screen's row count reaches its focus as the screen is drawn, and these
+        // tests draw nothing.
+        menu.pause.sync(PAUSE_ITEMS.len(), 1);
+        let settings = PAUSE_ITEMS
+            .iter()
+            .position(|(label, _)| *label == "Settings")
+            .expect("the overlay offers the settings");
+
+        for _ in 0..settings {
+            menu.nav(NavAction::Down, &views(view));
+        }
+
+        menu.nav(NavAction::Confirm, &views(view));
+
+        menu
+    }
+
+    /// The same for whichever settings page is up.
+    fn sync_page(menu: &mut Menu, view: &SettingsView) {
+        let page = menu.on_settings_page().expect("a settings page is up");
+        menu.settings
+            .sync(crate::settings::row_count(view, page), 1);
+    }
+
+    #[test]
+    fn a_row_leads_to_its_page_and_back_to_the_row() {
+        let view = nested();
+        let mut menu = on_settings(&view);
+        assert_eq!(menu.on_settings_page(), Some(ROOT_PAGE));
+        sync_page(&mut menu, &view);
+
+        assert_eq!(menu.nav(NavAction::Confirm, &views(&view)), None);
+        assert_eq!(menu.on_settings_page(), Some(CHILD_PAGE));
+        sync_page(&mut menu, &view);
+
+        // The rows being read are the open page's, not the root's.
+        assert_eq!(
+            menu.nav(NavAction::Confirm, &views(&view)),
+            Some(UiCmd::Setting {
+                id: CHILD_ROW,
+                step: 1,
+            })
+        );
+
+        assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
+        assert_eq!(menu.on_settings_page(), Some(ROOT_PAGE));
+    }
+
+    /// Only the last Back leaves; the ones before it walk back up the pages.
+    #[test]
+    fn the_settings_are_left_from_their_first_page() {
+        let view = nested();
+        let mut menu = on_settings(&view);
+        sync_page(&mut menu, &view);
+        menu.nav(NavAction::Confirm, &views(&view));
+        menu.nav(NavAction::Back, &views(&view));
+
+        assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
+        assert_eq!(menu.on_settings_page(), None);
+        // Back out of the overlay the settings were opened from.
+        assert_eq!(
+            menu.nav(NavAction::Back, &views(&view)),
+            Some(UiCmd::Resume)
+        );
+    }
+
+    /// The UI can be closed from anywhere, so a page left open must not leave a trail
+    /// for the next visit to back out through.
+    #[test]
+    fn reopening_the_ui_drops_a_page_left_open() {
+        let view = nested();
+        let mut menu = on_settings(&view);
+        sync_page(&mut menu, &view);
+        menu.nav(NavAction::Confirm, &views(&view));
+        assert_eq!(menu.on_settings_page(), Some(CHILD_PAGE));
+        assert_eq!(menu.settings_depth(), 1);
+
+        menu.open(true);
+
+        assert_eq!(menu.settings_depth(), 0);
     }
 }

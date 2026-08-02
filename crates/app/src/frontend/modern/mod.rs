@@ -9,7 +9,7 @@ mod states;
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::file_browser::FileBrowser;
-use crate::frontend::{BrowseTarget, Frontend, FrontendCtx, NavAction};
+use crate::frontend::{BrowseTarget, Capture, Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
 use crate::rom_cover;
 use crate::rom_meta::RomMeta;
@@ -33,6 +33,9 @@ pub struct ModernFrontend {
     paths: Vec<PathBuf>,
     /// Rebuilt from the config whenever the app reports a change.
     settings: ui::SettingsView,
+    /// The settings row waiting for an input to land on it, and how far a combo's
+    /// pair has got.
+    capturing: settings::Capturing,
     /// Same, from the save-state files of the loaded game.
     states: ui::StatesView,
     /// Slot whose screen was read out of its state file, to keep it off the disk
@@ -100,8 +103,38 @@ impl Frontend for ModernFrontend {
         self.app_cmd(cmd, ctx.config)
     }
 
-    fn capture_bind<I: BindableInput>(&mut self, _input: I, _pressed: bool) -> Option<AppCmd> {
-        None
+    fn capture_bind<I: BindableInput>(&mut self, input: I, pressed: bool) -> Capture {
+        let Some(id) = self.capturing.row else {
+            return Capture::Pass;
+        };
+
+        if pressed && input.is_cancel() {
+            self.capturing = settings::Capturing::default();
+            self.stale = true;
+
+            return Capture::Took(None);
+        }
+
+        // A row rebinds the device of the page it is on, so the other device is
+        // swallowed rather than bound and the row keeps waiting for its own.
+        if input.kind() != settings::device(id) {
+            return Capture::Took(None);
+        }
+
+        if settings::is_combo(id) {
+            return self.capture_combo(id, input, pressed);
+        }
+
+        // Swallowed but not bound: the input that opened the capture is still on its
+        // way up, and binding a row to the key that started it is never the intent.
+        if !pressed {
+            return Capture::Took(None);
+        }
+
+        self.capturing = settings::Capturing::default();
+        self.stale = true;
+
+        Capture::Took(settings::bind(id, input))
     }
 
     fn request_update(&mut self) {
@@ -156,6 +189,44 @@ impl Frontend for ModernFrontend {
 }
 
 impl ModernFrontend {
+    /// A combo is two buttons held together, so the capture takes two presses: the
+    /// first is remembered and shown, the second closes the pair. Letting the first
+    /// go before the second arrives puts the row back to waiting.
+    fn capture_combo<I: BindableInput>(
+        &mut self,
+        id: ui::SettingId,
+        input: I,
+        pressed: bool,
+    ) -> Capture {
+        let code = input.code();
+
+        if !pressed {
+            if self.capturing.first == Some(code) {
+                self.capturing.first = None;
+                self.stale = true;
+            }
+
+            return Capture::Took(None);
+        }
+
+        match self.capturing.first {
+            None => {
+                self.capturing.first = Some(code);
+                self.stale = true;
+
+                Capture::Took(None)
+            }
+            // The pad repeating the button it is already holding is not a pair.
+            Some(first) if first == code => Capture::Took(None),
+            Some(first) => {
+                self.capturing = settings::Capturing::default();
+                self.stale = true;
+
+                Capture::Took(settings::bind_combo(id, first, code))
+            }
+        }
+    }
+
     /// Both view models are read-only snapshots, so they only need rebuilding
     /// when the app says something under them changed.
     fn refresh<FS: PlatformFileSystem>(&mut self, ctx: &FrontendCtx<'_, FS>) {
@@ -164,7 +235,7 @@ impl ModernFrontend {
         }
 
         self.load_library(ctx);
-        self.settings = settings::view(ctx.config, ctx.palettes);
+        self.settings = settings::view(ctx.config, ctx.palettes, self.capturing);
         self.loaded = ctx.roms.get_last_path().cloned();
         self.version += 1;
         self.states = states::view(ctx, self.version);
@@ -282,6 +353,15 @@ impl ModernFrontend {
 
     fn app_cmd(&mut self, cmd: ui::UiCmd, config: &AppConfig) -> Option<AppCmd> {
         Some(match cmd {
+            // A binding row is not applied, it opens a capture; picking the row that
+            // is already waiting puts it back rather than leaving no way out.
+            ui::UiCmd::Setting { id, .. } if settings::is_binding(id) => {
+                let row = (self.capturing.row != Some(id)).then_some(id);
+                self.capturing = settings::Capturing { row, first: None };
+                self.stale = true;
+
+                return None;
+            }
             ui::UiCmd::Setting { id, step } => return settings::apply(id, step, config),
             ui::UiCmd::LaunchRom(index) => AppCmd::LoadFile(self.paths.get(index)?.clone()),
             ui::UiCmd::Resume => AppCmd::ToggleMenu,

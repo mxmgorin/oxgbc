@@ -10,10 +10,24 @@ use egui::{Align, Layout, Ui};
 /// Identifies a row to the platform that produced it; opaque on this side.
 pub type SettingId = u16;
 
+/// A page of the view, by its place in [`SettingsView::pages`].
+pub type PageId = usize;
+
+/// The page the screen opens on; the rest are reached from its rows.
+pub const ROOT_PAGE: PageId = 0;
+
 /// Owned rather than borrowed: the platform rebuilds this only when the config
 /// changes, and owning it keeps both sides free of lifetime plumbing.
+///
+/// Every page is built at once rather than on the way in, so moving between them
+/// is this crate's own business and costs the platform nothing.
 #[derive(Default)]
 pub struct SettingsView {
+    pub pages: Vec<Page>,
+}
+
+pub struct Page {
+    pub title: String,
     pub sections: Vec<Section>,
 }
 
@@ -33,6 +47,16 @@ pub enum Control {
     /// `◀ value ▶`: the platform formats the value and applies the step.
     Stepper(String),
     Action,
+    /// What reaches this action now — or, while `capturing`, what the platform is
+    /// still waiting for. The wording is the platform's: only it knows what an input
+    /// is called and how far through a combo the capture has got.
+    Binding {
+        current: String,
+        capturing: bool,
+    },
+    /// Leads to another page of the view. The platform never hears about it: which
+    /// page is up is no more its business than which screen is.
+    Page(PageId),
 }
 
 /// Room kept for a stepper's value, wide enough for the longest one a row shows.
@@ -41,18 +65,34 @@ const VALUE_WIDTH: f32 = theme::UNIT * 38.0;
 /// label is cut at this, so a long one can never run under its own control.
 const CONTROL_WIDTH: f32 = VALUE_WIDTH + theme::UNIT * 20.0;
 
-/// Flattened row count, which is what the focus model moves through.
-pub fn row_count(view: &SettingsView) -> usize {
-    view.sections.iter().map(|s| s.rows.len()).sum()
+/// Flattened row count of one page, which is what the focus model moves through.
+pub fn row_count(view: &SettingsView, page: PageId) -> usize {
+    view.pages
+        .get(page)
+        .map_or(0, |page| page.sections.iter().map(|s| s.rows.len()).sum())
 }
 
-pub fn row_at(view: &SettingsView, index: usize) -> Option<&Row> {
-    view.sections.iter().flat_map(|s| s.rows.iter()).nth(index)
+pub fn row_at(view: &SettingsView, page: PageId, index: usize) -> Option<&Row> {
+    view.pages
+        .get(page)?
+        .sections
+        .iter()
+        .flat_map(|s| s.rows.iter())
+        .nth(index)
 }
 
-pub fn settings(root: &mut Ui, view: &SettingsView, focus: &mut GridFocus, out: &mut Vec<UiCmd>) {
-    focus.sync(row_count(view), 1);
+/// Shows one page, and reports the page a row was clicked through to.
+pub fn settings(
+    root: &mut Ui,
+    view: &SettingsView,
+    page: PageId,
+    focus: &mut GridFocus,
+    out: &mut Vec<UiCmd>,
+) -> Option<PageId> {
+    focus.sync(row_count(view, page), 1);
     let follow_focus = focus.take_moved();
+    let page = view.pages.get(page)?;
+    let mut opened = None;
 
     egui::CentralPanel::default().show(root, |ui| {
         theme::page(ui);
@@ -66,22 +106,24 @@ pub fn settings(root: &mut Ui, view: &SettingsView, focus: &mut GridFocus, out: 
                 // single row's height budget, and the page would stop scrolling.
                 ui.vertical_centered(|ui| {
                     ui.set_max_width(WIDTH_PAGE);
-                    theme::heading(ui, "Settings");
+                    theme::heading(ui, &page.title);
                     let mut index = 0;
 
-                    for section in &view.sections {
+                    for section in &page.sections {
                         ui.add_space(SETTINGS_ROW_HEIGHT * 0.5);
                         ui.label(egui::RichText::new(&section.title).strong());
                         ui.separator();
 
                         for row in &section.rows {
-                            show_row(ui, row, index, focus, follow_focus, out);
+                            opened = show_row(ui, row, index, focus, follow_focus, out).or(opened);
                             index += 1;
                         }
                     }
                 });
             });
     });
+
+    opened
 }
 
 fn show_row(
@@ -91,7 +133,7 @@ fn show_row(
     focus: &mut GridFocus,
     follow_focus: bool,
     out: &mut Vec<UiCmd>,
-) {
+) -> Option<PageId> {
     let focused = focus.is_focused(index);
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), SETTINGS_ROW_HEIGHT),
@@ -126,10 +168,11 @@ fn show_row(
             .max_rect(rect.shrink2(egui::vec2(ROW_PAD, 0.0)))
             .layout(Layout::right_to_left(Align::Center)),
     );
-    show_control(&mut controls, row, out);
+
+    show_control(&mut controls, row, out)
 }
 
-fn show_control(ui: &mut Ui, row: &Row, out: &mut Vec<UiCmd>) {
+fn show_control(ui: &mut Ui, row: &Row, out: &mut Vec<UiCmd>) -> Option<PageId> {
     match &row.control {
         Control::Toggle(on) => {
             if ui.button(if *on { "On" } else { "Off" }).clicked() {
@@ -168,5 +211,25 @@ fn show_control(ui: &mut Ui, row: &Row, out: &mut Vec<UiCmd>) {
                 });
             }
         }
+        // A button rather than a label, so a pointer can start the capture the same
+        // way Confirm does.
+        Control::Binding { current, capturing } => {
+            if ui
+                .add(egui::Button::selectable(*capturing, current))
+                .clicked()
+            {
+                out.push(UiCmd::Setting {
+                    id: row.id,
+                    step: 1,
+                });
+            }
+        }
+        Control::Page(page) => {
+            if ui.button("Open").clicked() {
+                return Some(*page);
+            }
+        }
     }
+
+    None
 }

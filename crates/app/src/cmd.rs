@@ -44,6 +44,7 @@ pub enum AppCmd {
     ToggleFullscreen,
     Macro(Box<[AppCmd]>),
     BindInput(BindInputCmd),
+    BindCombo(BindComboCmd),
     ToggleDebug,
     ToggleStepping,
     StepFrame,
@@ -78,6 +79,7 @@ impl AppCmd {
             AppCmd::ToggleFullscreen => "Fullscreen",
             AppCmd::Macro(_) => "Macro",
             AppCmd::BindInput(_) => "Bind Input",
+            AppCmd::BindCombo(_) => "Bind Combo",
             AppCmd::ToggleDebug => "Toggle Debug",
             AppCmd::StepFrame => "Step Frame",
             AppCmd::ToggleStepping => "Toggle Stepping",
@@ -116,6 +118,40 @@ pub struct BindInputCmd {
 pub enum BindTarget {
     Buttons(Box<[JoypadButton]>),
     Cmds(BindCmds),
+}
+
+/// A pair of gamepad buttons pointed at one action.
+///
+/// Its own command rather than a second index on [`BindInputCmd`]: combos live in a
+/// table of their own, fire on the press alone, and exist for no other device.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct BindComboCmd {
+    /// Button codes, not `sdl2::controller::Button`, which has no serde of its own —
+    /// and an [`AppCmd`] is written into the binding files.
+    pub first: usize,
+    pub second: usize,
+    pub target: BindTarget,
+}
+
+impl BindTarget {
+    /// What the target comes down to on the wire: the command for the press, and the
+    /// one for the release when the target has any.
+    pub fn cmds(&self) -> (AppCmd, Option<AppCmd>) {
+        match self {
+            BindTarget::Buttons(buttons) if buttons.len() == 1 => (
+                AppCmd::PressButton(buttons[0]),
+                Some(AppCmd::ReleaseButton(buttons[0])),
+            ),
+            BindTarget::Buttons(buttons) => (
+                AppCmd::new_macro_buttons(buttons.clone(), true),
+                Some(AppCmd::new_macro_buttons(buttons.clone(), false)),
+            ),
+            BindTarget::Cmds(cmds) => (
+                (*cmds.pressed).clone(),
+                cmds.released.as_ref().map(|cmd| (**cmd).clone()),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

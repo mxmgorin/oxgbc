@@ -42,6 +42,18 @@ pub enum NavAction {
     Options,
 }
 
+/// What the rebinding flow did with a raw input.
+///
+/// An `Option<AppCmd>` cannot say this: cancelling a capture produces no command and
+/// still has to stop the input reaching whatever it is bound to, or Escape would
+/// close the menu on its way out of the capture.
+pub enum Capture {
+    /// Not capturing; the input goes on to its binding as usual.
+    Pass,
+    /// Taken by the rebinding flow — nothing else may act on this input.
+    Took(Option<AppCmd>),
+}
+
 /// App state a frontend reads while it is itself mutably borrowed — passed as
 /// disjoint field borrows because `App` owns the frontend.
 pub struct FrontendCtx<'a, FS: PlatformFileSystem> {
@@ -79,9 +91,8 @@ pub trait Frontend {
         ctx: FrontendCtx<'_, FS>,
     ) -> Option<AppCmd>;
 
-    /// Offer a raw input to the rebinding flow before it reaches the emulator;
-    /// `Some` only while the UI is waiting to capture a binding.
-    fn capture_bind<I: BindableInput>(&mut self, input: I, pressed: bool) -> Option<AppCmd>;
+    /// Offer a raw input to the rebinding flow before it reaches the emulator.
+    fn capture_bind<I: BindableInput>(&mut self, input: I, pressed: bool) -> Capture;
 
     /// Mark the UI dirty — app state it displays changed underneath it.
     fn request_update(&mut self);

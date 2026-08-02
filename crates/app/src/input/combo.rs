@@ -141,6 +141,17 @@ impl ButtonComboBindings {
         self.cmds[i2] = Some(cmd);
     }
 
+    /// Takes `cmd` off every pair that reaches it. A sweep of the whole table rather
+    /// than a lookup: [`Self::add_cmd`] writes a pair both ways round, and the
+    /// defaults deliberately give one action several pairs.
+    pub fn clear_cmd(&mut self, cmd: &AppCmd) {
+        for bound in self.cmds.iter_mut() {
+            if bound.as_ref() == Some(cmd) {
+                *bound = None;
+            }
+        }
+    }
+
     pub fn iter_combos(&self) -> impl Iterator<Item = ButtonCombo> + '_ {
         let n = Button::COUNT;
 
@@ -306,5 +317,44 @@ impl<'de> Deserialize<'de> for ButtonComboBindings {
         }
 
         Ok(bindings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The defaults give one action several pairs, because not every pad has a Guide
+    /// button. Rebinding replaces, so all of them have to go.
+    #[test]
+    fn clearing_an_action_takes_every_pair_that_reached_it() {
+        let mut bindings = ButtonComboBindings::default();
+        let menu = AppCmd::ToggleMenu;
+
+        assert!(bindings.iter_combos().any(|combo| combo.cmd == menu));
+
+        bindings.clear_cmd(&menu);
+
+        assert!(
+            !bindings.iter_combos().any(|combo| combo.cmd == menu),
+            "both the Back and the Guide pair"
+        );
+        assert!(
+            bindings.iter_combos().count() > 0,
+            "and nothing else was touched"
+        );
+    }
+
+    /// A pair is stored both ways round, so the order it was pressed in cannot matter.
+    #[test]
+    fn a_pair_reads_the_same_either_way_round() {
+        let mut bindings = ButtonComboBindings::new();
+        bindings.add_cmd(Button::LeftShoulder, Button::A, AppCmd::ToggleMenu);
+
+        let i1 = ButtonComboBindings::index(Button::LeftShoulder.code(), Button::A.code());
+        let i2 = ButtonComboBindings::index(Button::A.code(), Button::LeftShoulder.code());
+
+        assert_eq!(bindings.cmds[i1], Some(AppCmd::ToggleMenu));
+        assert_eq!(bindings.cmds[i2], Some(AppCmd::ToggleMenu));
     }
 }

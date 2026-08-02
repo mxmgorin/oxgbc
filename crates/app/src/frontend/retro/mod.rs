@@ -5,7 +5,7 @@
 pub mod menu;
 
 use crate::cmd::AppCmd;
-use crate::frontend::{Frontend, FrontendCtx, NavAction};
+use crate::frontend::{Capture, Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
 use crate::roms::RomsState;
 use crate::video::AppVideo;
@@ -56,8 +56,19 @@ impl Frontend for RetroFrontend {
         None
     }
 
-    fn capture_bind<I: BindableInput>(&mut self, input: I, pressed: bool) -> Option<AppCmd> {
-        self.menu.handle_input(input, pressed)
+    /// The text menu binds from a screen of its own, so an input it does not want
+    /// simply passes through.
+    fn capture_bind<I: BindableInput>(&mut self, input: I, pressed: bool) -> Capture {
+        // Presses only: its wait screen is opened by Confirm, and that key letting go
+        // arrives while the screen is up — it would bind itself.
+        if !pressed {
+            return Capture::Pass;
+        }
+
+        match self.menu.handle_input(input, pressed) {
+            Some(cmd) => Capture::Took(Some(cmd)),
+            None => Capture::Pass,
+        }
     }
 
     #[inline(always)]
