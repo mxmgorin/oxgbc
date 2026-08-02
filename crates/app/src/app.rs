@@ -9,6 +9,7 @@ use crate::notification::Notifications;
 use crate::save::battery::BatterySave;
 use crate::save::meta::StateMeta;
 use crate::save::{self, shot};
+use crate::storage::zip::{is_zip, unzip_rom};
 use crate::video::palette::LcdPalette;
 use crate::video::shader::{next_shader_by_name, prev_shader_by_name};
 use crate::video::AppVideo;
@@ -693,10 +694,8 @@ where
             .read_file_bytes(path)
             .ok_or("filesystem.read_file_bytes: None")?;
 
-        println!("{:?}", path);
-
-        if crate::is_zip(path) {
-            file_bytes = crate::unzip_rom(&file_bytes)?.into_boxed_slice();
+        if is_zip(path) {
+            file_bytes = unzip_rom(&file_bytes)?.into_boxed_slice();
         }
 
         let mut cart = Cart::new(file_bytes).map_err(|e| e.to_string())?;

@@ -1,3 +1,7 @@
+//! The emulator application: what turns the `core` emulator into something a
+//! person uses. [`run`] is the whole entry point — a platform hands over its file
+//! access and gets a running app.
+
 use crate::app::{App, AppState};
 use crate::config::AppConfig;
 use crate::input::handler::InputHandler;
@@ -11,11 +15,8 @@ use core::emu::runtime::EmuRuntime;
 use core::emu::Emu;
 use core::ppu::lcd::Lcd;
 use core::ppu::Ppu;
-use std::io::Cursor;
-use std::io::Read;
+use std::env;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
-use zip::ZipArchive;
 
 // Both enabled is not an error: a workspace build unifies desktop's modern with
 // android's retro, and modern wins (see `frontend::ActiveFrontend`).
@@ -30,37 +31,14 @@ pub mod frontend;
 pub mod input;
 pub mod library;
 pub mod notification;
+pub mod platform;
 pub mod save;
 pub mod storage;
 pub mod video;
 
-pub fn is_zip(path: &Path) -> bool {
-    let extension = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    extension == "zip"
-}
-
-pub fn unzip_rom(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let reader = Cursor::new(bytes);
-    let mut archive = ZipArchive::new(reader).map_err(|_| "Invalid zip archive".to_string())?;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).unwrap();
-        let name = file.name().to_ascii_lowercase();
-
-        if name.ends_with(".gb") || name.ends_with(".gbc") {
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).unwrap();
-            return Ok(buffer);
-        }
-    }
-
-    Err("No valid .gb or .gbc file found in zip".to_string())
-}
+// What a platform build implements to start the app, kept reachable from the crate
+// root: `app::PlatformFileSystem` is what desktop and android write.
+pub use platform::{AppPlatform, EmptyFileDialog, PlatformFileDialog, PlatformFileSystem};
 
 pub fn run<FS, FD>(args: Vec<String>, platform: AppPlatform<FS, FD>)
 where
@@ -70,8 +48,8 @@ where
     let base_dir = get_base_dir();
     log::info!("Using base_dir: {base_dir:?}");
 
-    let config = get_config();
-    let palettes = get_palettes();
+    let config = AppConfig::load_or_create();
+    let palettes = LcdPalette::load_or_create();
     let mut emu = new_emu(&config, &palettes);
     let mut sdl = sdl2::init().unwrap();
     let mut input = InputHandler::new(&sdl).unwrap();
@@ -130,111 +108,5 @@ where
         if !app.config.auto_continue {
             app.state = AppState::Paused;
         }
-    }
-}
-
-pub fn get_config() -> AppConfig {
-    let config_path = AppConfig::default_path();
-
-    let config = if config_path.exists() {
-        let config = AppConfig::from_file(&config_path);
-
-        let Ok(config) = config else {
-            log::error!("Failed to parse config file: {}", config.unwrap_err());
-
-            let backup_path = config_path.with_file_name(format!(
-                "{}.bak",
-                config_path.file_name().unwrap().to_string_lossy()
-            ));
-            if let Err(rename_err) = fs::rename(config_path, &backup_path) {
-                log::error!("Failed to rename invalid config file: {rename_err}");
-            } else {
-                log::error!("Renamed invalid config to {backup_path:?}");
-            }
-
-            let default_config = AppConfig::default();
-
-            if let Err(save_err) = default_config.save_file() {
-                panic!("Failed to save default config: {save_err}");
-            }
-
-            return default_config;
-        };
-
-        config
-    } else {
-        let default_config = AppConfig::default();
-
-        if let Err(err) = default_config.save_file() {
-            panic!("Failed to save default config: {err}");
-        }
-
-        default_config
-    };
-
-    config
-}
-
-pub fn get_palettes() -> Box<[LcdPalette]> {
-    let path = LcdPalette::default_palettes_path();
-
-    if path.exists() {
-        core::read_json_file(&path).unwrap()
-    } else {
-        let palettes = LcdPalette::default_palettes().into_boxed_slice();
-        LcdPalette::save_palettes_file(&palettes).unwrap();
-
-        palettes
-    }
-}
-
-pub trait PlatformFileDialog {
-    fn select_file(&mut self, title: &str, filter: (&[&str], &str)) -> Option<String>;
-    fn select_dir(&mut self, title: &str) -> Option<String>;
-
-    /// Whether this platform's own picker can be reached the way the app is driven.
-    /// Android's is a system screen a gamepad walks like any other; a desktop dialog
-    /// wants a pointer, and a build without one has nothing at all — those fall back
-    /// to walking storage inside the app.
-    fn is_navigable(&self) -> bool {
-        false
-    }
-}
-
-pub struct AppPlatform<FS, FD>
-where
-    FS: PlatformFileSystem,
-    FD: PlatformFileDialog,
-{
-    pub fs: FS,
-    pub fd: FD,
-}
-
-impl<FS, FD> AppPlatform<FS, FD>
-where
-    FS: PlatformFileSystem,
-    FD: PlatformFileDialog,
-{
-    pub fn new(fs: FS, fd: FD) -> Self {
-        Self { fs, fd }
-    }
-}
-
-pub trait PlatformFileSystem {
-    fn get_file_name(&self, path: &Path) -> Option<String>;
-    fn read_file_bytes(&self, path: &Path) -> Option<Box<[u8]>>;
-    fn read_dir(&self, path: &Path) -> Result<Vec<String>, String>;
-    fn can_split_paths(&self) -> bool;
-}
-
-pub struct EmptyFileDialog;
-
-impl PlatformFileDialog for EmptyFileDialog {
-    fn select_file(&mut self, _title: &str, _filter: (&[&str], &str)) -> Option<String> {
-        None
-    }
-
-    fn select_dir(&mut self, _title: &str) -> Option<String> {
-        None
     }
 }

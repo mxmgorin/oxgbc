@@ -3,6 +3,7 @@
 
 pub mod browser;
 pub mod image;
+pub mod zip;
 
 use std::path::PathBuf;
 

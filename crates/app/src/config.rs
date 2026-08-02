@@ -220,6 +220,43 @@ impl InterfaceConfig {
 }
 
 impl AppConfig {
+    /// The stored config, or a fresh one written to disk. A file that will not parse
+    /// is kept as `.bak` rather than overwritten: it is the user's, and whatever they
+    /// hand-edited into it is worth more than our defaults.
+    pub fn load_or_create() -> Self {
+        let path = Self::default_path();
+
+        if !path.exists() {
+            return Self::save_default();
+        }
+
+        match Self::from_file(&path) {
+            Ok(config) => config,
+            Err(err) => {
+                log::error!("Failed to parse config file: {err}");
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                let backup = path.with_file_name(format!("{name}.bak"));
+
+                match fs::rename(&path, &backup) {
+                    Ok(()) => log::error!("Renamed invalid config to {backup:?}"),
+                    Err(err) => log::error!("Failed to rename invalid config file: {err}"),
+                }
+
+                Self::save_default()
+            }
+        }
+    }
+
+    fn save_default() -> Self {
+        let config = Self::default();
+
+        if let Err(err) = config.save_file() {
+            panic!("Failed to save default config: {err}");
+        }
+
+        config
+    }
+
     pub fn from_file(path: &Path) -> io::Result<Self> {
         let data = fs::read_to_string(path)?;
         let config: Self = serde_json::from_str(&data)?;

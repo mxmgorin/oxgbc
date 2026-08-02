@@ -11,6 +11,20 @@ pub struct LcdPalette {
 }
 
 impl LcdPalette {
+    /// The stored palettes, or the built-in set written to disk for editing.
+    pub fn load_or_create() -> Box<[LcdPalette]> {
+        let path = Self::default_palettes_path();
+
+        if path.exists() {
+            return core::read_json_file(&path).unwrap();
+        }
+
+        let palettes = Self::default_palettes().into_boxed_slice();
+        Self::save_palettes_file(&palettes).unwrap();
+
+        palettes
+    }
+
     pub fn save_palettes_file(palettes: &Box<[LcdPalette]>) -> Result<(), io::Error> {
         let path = Self::default_palettes_path();
 
