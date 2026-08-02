@@ -34,6 +34,9 @@ pub enum UiCmd {
     RenameRom(usize, String),
     /// Ask for a game to be picked off the disk and added to the shelf.
     AddRom,
+    /// Ask for a folder to be picked; its games are what the shelf lists from then
+    /// on, on top of everything already played.
+    AddRomsDir,
     /// Walk into what the browser's row `0`-based index holds: a folder to open, or
     /// a game to take.
     BrowseEnter(usize),
@@ -86,6 +89,8 @@ enum Screen {
     StateActions(usize),
     /// Naming the state in one slot.
     StateRename(usize),
+    /// The ways of putting games on the shelf, which is what the plus opens.
+    AddRom,
     /// What can be done with one cartridge of the library, besides playing it.
     RomActions(usize),
     /// Naming one cartridge.
@@ -135,6 +140,8 @@ pub struct Menu {
     library: LibraryFocus,
     pause: GridFocus,
     settings: GridFocus,
+    /// The plus's sheet, whose rows are neither the cart's nor the pause screen's.
+    add: GridFocus,
     /// The settings pages walked through to reach the one on screen, each with the
     /// row it was left on, so backing out lands where it was opened from. Always
     /// empty outside the settings: the last Back is what leaves them.
@@ -264,6 +271,17 @@ impl Menu {
 
                 self.finish_rename(slot, event)
             }
+            Screen::AddRom => match self.add.nav(action)? {
+                FocusEvent::Activate(row) => {
+                    let action = library::add_at(row)?;
+
+                    Some(self.act_on_add(action))
+                }
+                FocusEvent::Back => {
+                    self.screen = Screen::Library;
+                    None
+                }
+            },
             Screen::RomActions(index) => match self.rom_actions.nav(action)? {
                 FocusEvent::Activate(row) => {
                     let action = library::action_at(row)?;
@@ -391,7 +409,23 @@ impl Menu {
 
                 None
             }
-            LibraryEvent::AddRom => Some(UiCmd::AddRom),
+            LibraryEvent::Add => {
+                self.add = GridFocus::default();
+                self.screen = Screen::AddRom;
+
+                None
+            }
+        }
+    }
+
+    /// Either row is done with the sheet: the platform takes over from here, with a
+    /// picker of its own or the storage walk.
+    fn act_on_add(&mut self, action: library::AddAction) -> UiCmd {
+        self.screen = Screen::Library;
+
+        match action {
+            library::AddAction::OpenRom => UiCmd::AddRom,
+            library::AddAction::ScanDir => UiCmd::AddRomsDir,
         }
     }
 
@@ -596,6 +630,11 @@ impl Menu {
 
                 if let Some(event) = event {
                     out.extend(self.finish_rename(slot, event));
+                }
+            }
+            Screen::AddRom => {
+                if let Some(action) = library::show_add(root, &mut self.add) {
+                    out.push(self.act_on_add(action));
                 }
             }
             Screen::RomActions(index) => {
@@ -830,6 +869,53 @@ mod tests {
             menu.nav(NavAction::Back, &views(&view)),
             Some(UiCmd::Resume)
         );
+    }
+
+    /// Opens the library with an empty shelf, which leaves the focus on the plus.
+    /// A screen's shape reaches its focus as it is drawn, and these tests draw
+    /// nothing.
+    fn on_the_plus() -> Menu {
+        let mut menu = Menu::default();
+        menu.open(false);
+        menu.library.sync(0, 1);
+
+        menu
+    }
+
+    /// The plus asks which way, rather than opening one picker of the two.
+    #[test]
+    fn the_plus_offers_a_game_and_a_folder() {
+        let view = nested();
+        let mut menu = on_the_plus();
+
+        assert_eq!(menu.nav(NavAction::Confirm, &views(&view)), None);
+        menu.add.sync(library::add_count(), 1);
+        assert_eq!(
+            menu.nav(NavAction::Confirm, &views(&view)),
+            Some(UiCmd::AddRom)
+        );
+
+        // Back on the shelf, and the plus is still what the focus is on.
+        menu.nav(NavAction::Confirm, &views(&view));
+        menu.add.sync(library::add_count(), 1);
+        menu.nav(NavAction::Down, &views(&view));
+        assert_eq!(
+            menu.nav(NavAction::Confirm, &views(&view)),
+            Some(UiCmd::AddRomsDir)
+        );
+    }
+
+    #[test]
+    fn backing_out_of_the_sheet_asks_for_nothing() {
+        let view = nested();
+        let mut menu = on_the_plus();
+        menu.nav(NavAction::Confirm, &views(&view));
+        menu.add.sync(library::add_count(), 1);
+
+        assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
+        // On the shelf again: Back there is what leaves, and with no game to return
+        // to there is nowhere to go.
+        assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
     }
 
     /// The UI can be closed from anywhere, so a page left open must not leave a trail

@@ -373,6 +373,7 @@ impl ModernFrontend {
                 AppCmd::RenameRom(self.paths.get(index)?.clone(), name)
             }
             ui::UiCmd::AddRom => AppCmd::SelectRom,
+            ui::UiCmd::AddRomsDir => AppCmd::SelectRomsDir,
             ui::UiCmd::BrowseEnter(index) => return self.browse_enter(index),
             ui::UiCmd::BrowseChooseDir => {
                 let dir = self.walk.as_ref()?.current_dir.clone();

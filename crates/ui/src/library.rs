@@ -69,16 +69,53 @@ const RING: f32 = 0.06;
 /// What the header's buttons ask for.
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum LibraryEvent {
-    AddRom,
+    /// Open the sheet of ways to put games on the shelf.
+    Add,
     OpenSettings,
 }
 
 /// The header, left to right. Icons alone: a gear and a plus need no caption, and
 /// the words are in the tooltip for whoever has a pointer.
 const HEADER: [(&str, &str, LibraryEvent); 2] = [
-    ("\u{2795}", "Add game…", LibraryEvent::AddRom),
+    ("\u{2795}", "Add games", LibraryEvent::Add),
     ("\u{2699}", "Settings", LibraryEvent::OpenSettings),
 ];
+
+/// The two ways games reach the shelf, which is what the plus offers.
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum AddAction {
+    /// One game, picked by file and started right away.
+    OpenRom,
+    /// A folder, whose games are the ones the shelf lists from then on.
+    ScanDir,
+}
+
+const ADD_TITLE: &str = "Add games";
+const ADD_ACTIONS: [(&str, AddAction); 2] = [
+    ("Open a game…", AddAction::OpenRom),
+    ("Scan a folder…", AddAction::ScanDir),
+];
+
+pub fn add_count() -> usize {
+    ADD_ACTIONS.len()
+}
+
+pub fn add_at(index: usize) -> Option<AddAction> {
+    ADD_ACTIONS.get(index).map(|(_, action)| *action)
+}
+
+pub fn show_add(root: &mut Ui, focus: &mut GridFocus) -> Option<AddAction> {
+    focus.sync(add_count(), 1);
+    let height = overlay::title_height() + overlay::rows_height(add_count());
+    let mut clicked = None;
+
+    overlay::popup(root, Vec2::new(WIDTH_SHEET, height), |ui| {
+        theme::heading(ui, ADD_TITLE);
+        clicked = overlay::rows(ui, ADD_ACTIONS.iter().map(|(label, _)| *label), focus);
+    });
+
+    clicked.and_then(add_at)
+}
 
 /// What activating something on this screen leads to.
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -314,7 +351,7 @@ mod tests {
         assert_eq!(focus.rom(), None, "the header has it now");
         assert_eq!(
             focus.nav(NavAction::Confirm),
-            Some(LibraryPick::Header(LibraryEvent::AddRom))
+            Some(LibraryPick::Header(LibraryEvent::Add))
         );
 
         assert_eq!(focus.nav(NavAction::Down), None);
@@ -343,12 +380,12 @@ mod tests {
         assert_eq!(focus.rom(), None);
         assert_eq!(
             focus.nav(NavAction::Confirm),
-            Some(LibraryPick::Header(LibraryEvent::AddRom))
+            Some(LibraryPick::Header(LibraryEvent::Add))
         );
         assert_eq!(focus.nav(NavAction::Down), None, "nowhere to go");
         assert_eq!(
             focus.nav(NavAction::Confirm),
-            Some(LibraryPick::Header(LibraryEvent::AddRom))
+            Some(LibraryPick::Header(LibraryEvent::Add))
         );
     }
 
