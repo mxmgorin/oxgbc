@@ -217,13 +217,13 @@ impl VideoBackend {
     pub fn update_config(&mut self, config: &VideoConfig) {
         match self {
             VideoBackend::Sdl2(x) => x.update_config(config),
-            VideoBackend::Gl(x) => x.update_config(&config.render),
+            VideoBackend::Gl(x) => x.update_config(config),
         }
     }
     pub fn draw_tiles(&mut self, tiles: impl Iterator<Item = TileData>) {
         match self {
             VideoBackend::Sdl2(x) => x.draw_tiles(tiles),
-            VideoBackend::Gl(_) => {}
+            VideoBackend::Gl(x) => x.draw_tiles(tiles),
         }
     }
 

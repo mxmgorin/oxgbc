@@ -38,7 +38,7 @@ impl AppVideo {
                 VideoBackend::Sdl2(Box::new(backend))
             }
             VideoBackendType::Gl => {
-                let backend = GlBackend::new(sdl, game_rect, &config.render)?;
+                let backend = GlBackend::new(sdl, game_rect, config)?;
                 VideoBackend::Gl(backend)
             }
         };
