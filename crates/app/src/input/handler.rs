@@ -417,6 +417,7 @@ impl InputHandler {
                         emu.runtime.cpu.clock.bus.update_model(model);
                         app.refresh_dmg_palette(emu);
                     }
+                    ChangeConfigCmd::LibrarySort(sort) => app.config.library_sort = sort,
                     ChangeConfigCmd::TargetFps(x) => {
                         app.config.video.render.target_fps = x;
                         app.video.update_config(&app.config.video);

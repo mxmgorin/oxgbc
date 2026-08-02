@@ -6,8 +6,8 @@ mod browse;
 mod settings;
 mod states;
 
-use crate::cmd::AppCmd;
-use crate::config::AppConfig;
+use crate::cmd::{AppCmd, ChangeConfigCmd};
+use crate::config::{AppConfig, LibrarySort};
 use crate::file_browser::FileBrowser;
 use crate::frontend::{BrowseTarget, Capture, Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
@@ -92,6 +92,7 @@ impl Frontend for ModernFrontend {
             library: ui::LibraryView {
                 entries: &self.entries,
                 version: self.version,
+                sort: into_sort(ctx.config.library_sort),
             },
             settings: &self.settings,
             states: &self.states,
@@ -164,6 +165,7 @@ impl Frontend for ModernFrontend {
             library: ui::LibraryView {
                 entries: &self.entries,
                 version: self.version,
+                sort: into_sort(ctx.config.library_sort),
             },
             settings: &self.settings,
             states: &self.states,
@@ -290,7 +292,8 @@ impl ModernFrontend {
 
     /// The shelf is what has been played plus whatever else is in the chosen ROMs
     /// directory: played first and most recent leading, then the rest by name, so
-    /// the order is the same on every run — the scan itself is unordered.
+    /// the order is the same on every run — the scan itself is unordered. That is
+    /// also [`LibrarySort::Recent`]; the other orders are a sort over the result.
     ///
     /// One card per file *name*, not per path. Everything an app saves beside a game
     /// — battery, states, metadata, cover, play time — goes by that name, so two
@@ -304,27 +307,17 @@ impl ModernFrontend {
             ctx.roms.iter_loaded(ctx.fs).into_iter().flatten().collect();
         unplayed.sort_by_key(|path| path.file_name().map(|name| name.to_ascii_lowercase()));
 
-        self.paths = played
+        let mut cards: Vec<Card> = played
             .chain(unplayed)
             .filter(|path| match path.file_name() {
                 Some(name) => seen.insert(name.to_owned()),
                 None => false,
             })
+            .map(|path| card_of(ctx.roms, path))
             .collect();
-
-        self.entries = self
-            .paths
-            .iter()
-            .map(|path| {
-                let meta = rom_meta(path);
-
-                ui::RomEntry {
-                    title: title_of(path, &meta),
-                    kind: kind_of(meta.cgb),
-                    cover: cover_of(path),
-                }
-            })
-            .collect();
+        sort_cards(&mut cards, ctx.config.library_sort);
+        self.paths = cards.iter().map(|card| card.path.clone()).collect();
+        self.entries = cards.into_iter().map(|card| card.entry).collect();
     }
 
     /// A folder only moves the walk along; a file ends it, and what it ends as
@@ -374,6 +367,9 @@ impl ModernFrontend {
             }
             ui::UiCmd::AddRom => AppCmd::SelectRom,
             ui::UiCmd::AddRomsDir => AppCmd::SelectRomsDir,
+            ui::UiCmd::SortLibrary(sort) => {
+                AppCmd::ChangeConfig(ChangeConfigCmd::LibrarySort(from_sort(sort)))
+            }
             ui::UiCmd::BrowseEnter(index) => return self.browse_enter(index),
             ui::UiCmd::BrowseChooseDir => {
                 let dir = self.walk.as_ref()?.current_dir.clone();
@@ -398,6 +394,53 @@ impl ModernFrontend {
             ui::UiCmd::RestartRom => AppCmd::RestartRom,
             ui::UiCmd::Quit => AppCmd::Quit,
         })
+    }
+}
+
+/// A cart on its way to the shelf: what the screen shows of it, and the keys the
+/// shelf can be ordered by.
+struct Card {
+    path: PathBuf,
+    entry: ui::RomEntry,
+    /// Lowercased title, so ordering by name compares without allocating per pair.
+    name_key: String,
+    playtime_secs: u64,
+}
+
+fn card_of(roms: &RomsState, path: PathBuf) -> Card {
+    let meta = rom_meta(&path);
+    let title = title_of(&path, &meta);
+    let playtime_secs = path
+        .file_name()
+        .map(|name| roms.playtime(&name.to_string_lossy()))
+        .unwrap_or_default();
+
+    Card {
+        name_key: title.to_lowercase(),
+        entry: ui::RomEntry {
+            title,
+            kind: kind_of(meta.cgb),
+            cover: cover_of(&path),
+        },
+        playtime_secs,
+        path,
+    }
+}
+
+/// A stable sort, so cards a key cannot tell apart keep the order the merge put
+/// them in — which is itself the same on every run.
+fn sort_cards(cards: &mut [Card], by: LibrarySort) {
+    match by {
+        // Exactly what the merge produced.
+        LibrarySort::Recent => {}
+        LibrarySort::Name => cards.sort_by(|a, b| a.name_key.cmp(&b.name_key)),
+        // Longest first, with the never-played tail alphabetical rather than left
+        // in play order.
+        LibrarySort::Playtime => cards.sort_by(|a, b| {
+            b.playtime_secs
+                .cmp(&a.playtime_secs)
+                .then_with(|| a.name_key.cmp(&b.name_key))
+        }),
     }
 }
 
@@ -443,6 +486,24 @@ fn kind_of(cgb: CgbFlag) -> ui::CartKind {
         CgbFlag::DmgOnly => ui::CartKind::Dmg,
         CgbFlag::CgbEnhanced => ui::CartKind::CgbCompatible,
         CgbFlag::CgbOnly => ui::CartKind::CgbOnly,
+    }
+}
+
+/// The shelf's order crosses the seam both ways: out, so the sheet opens on the
+/// order in force, and back in, as what the config is set to.
+fn into_sort(sort: LibrarySort) -> ui::SortBy {
+    match sort {
+        LibrarySort::Recent => ui::SortBy::Recent,
+        LibrarySort::Name => ui::SortBy::Name,
+        LibrarySort::Playtime => ui::SortBy::Playtime,
+    }
+}
+
+fn from_sort(sort: ui::SortBy) -> LibrarySort {
+    match sort {
+        ui::SortBy::Recent => LibrarySort::Recent,
+        ui::SortBy::Name => LibrarySort::Name,
+        ui::SortBy::Playtime => LibrarySort::Playtime,
     }
 }
 

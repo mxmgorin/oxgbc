@@ -15,6 +15,8 @@ pub struct LibraryView<'a> {
     /// Bumped every time the platform rebuilds this view, which is the signal to
     /// throw away textures uploaded from the covers it replaced.
     pub version: u64,
+    /// The order the entries are already in, which the sort sheet opens on.
+    pub sort: SortBy,
 }
 
 pub struct RomEntry {
@@ -71,15 +73,66 @@ const RING: f32 = 0.06;
 pub enum LibraryEvent {
     /// Open the sheet of ways to put games on the shelf.
     Add,
+    /// Open the sheet of orders the shelf can be read in.
+    Sort,
     OpenSettings,
 }
 
 /// The header, left to right. Icons alone: a gear and a plus need no caption, and
 /// the words are in the tooltip for whoever has a pointer.
-const HEADER: [(&str, &str, LibraryEvent); 2] = [
+const HEADER: [(&str, &str, LibraryEvent); 3] = [
     ("\u{2795}", "Add games", LibraryEvent::Add),
+    ("\u{21C5}", "Sort games", LibraryEvent::Sort),
     ("\u{2699}", "Settings", LibraryEvent::OpenSettings),
 ];
+
+/// The orders the shelf can be read in. Mirrored on the platform side, which is
+/// what persists the choice; this crate only names them and reports the pick.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+pub enum SortBy {
+    /// Most recently played first, then everything else by name.
+    #[default]
+    Recent,
+    Name,
+    Playtime,
+}
+
+const SORT_TITLE: &str = "Sort by";
+const SORT_ACTIONS: [(&str, SortBy); 3] = [
+    ("Name", SortBy::Name),
+    ("Recently played", SortBy::Recent),
+    ("Most played", SortBy::Playtime),
+];
+
+pub fn sort_count() -> usize {
+    SORT_ACTIONS.len()
+}
+
+pub fn sort_at(index: usize) -> Option<SortBy> {
+    SORT_ACTIONS.get(index).map(|(_, sort)| *sort)
+}
+
+/// Where `sort` sits in the sheet, so it opens on the order the shelf is already
+/// in rather than on its first row.
+pub fn sort_row(sort: SortBy) -> usize {
+    SORT_ACTIONS
+        .iter()
+        .position(|(_, candidate)| *candidate == sort)
+        .unwrap_or_default()
+}
+
+pub fn show_sort(root: &mut Ui, focus: &mut GridFocus) -> Option<SortBy> {
+    focus.sync(sort_count(), 1);
+    let height = overlay::title_height() + overlay::rows_height(sort_count());
+    let mut clicked = None;
+
+    overlay::popup(root, Vec2::new(WIDTH_SHEET, height), |ui| {
+        theme::heading(ui, SORT_TITLE);
+        clicked = overlay::rows(ui, SORT_ACTIONS.iter().map(|(label, _)| *label), focus);
+    });
+
+    clicked.and_then(sort_at)
+}
 
 /// The two ways games reach the shelf, which is what the plus offers.
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -231,7 +284,13 @@ pub fn library(
         );
         for (index, (glyph, hint, asked)) in HEADER.iter().enumerate().rev() {
             let focused = focus.on_header && focus.header.is_focused(index);
-            let icon = egui::RichText::new(*glyph).size(ICON_SIZE);
+            // Looked up in the monospace family, which starts at Hack: the arrows
+            // live there and nowhere in the proportional chain. The emoji glyphs
+            // are in neither font, so they fall through to the same emoji fonts as
+            // before and look no different.
+            let icon = egui::RichText::new(*glyph)
+                .size(ICON_SIZE)
+                .family(egui::FontFamily::Monospace);
             let response = header.add(egui::Button::selectable(focused, icon));
 
             if response.hovered() {
@@ -362,6 +421,12 @@ mod tests {
     fn the_header_is_walked_sideways() {
         let mut focus = shelved();
         focus.nav(NavAction::Up);
+
+        assert_eq!(focus.nav(NavAction::Right), None);
+        assert_eq!(
+            focus.nav(NavAction::Confirm),
+            Some(LibraryPick::Header(LibraryEvent::Sort))
+        );
 
         assert_eq!(focus.nav(NavAction::Right), None);
         assert_eq!(

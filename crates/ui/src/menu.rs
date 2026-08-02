@@ -7,7 +7,9 @@
 use crate::browse::BrowseView;
 use crate::browse::{self, BrowsePick};
 use crate::cover::{self, CoverAction, CoverOffer};
-use crate::library::{self, library, LibraryEvent, LibraryFocus, LibraryPick, LibraryView};
+use crate::library::{
+    self, library, LibraryEvent, LibraryFocus, LibraryPick, LibraryView, SortBy,
+};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
@@ -37,6 +39,8 @@ pub enum UiCmd {
     /// Ask for a folder to be picked; its games are what the shelf lists from then
     /// on, on top of everything already played.
     AddRomsDir,
+    /// Read the shelf in this order from now on.
+    SortLibrary(SortBy),
     /// Walk into what the browser's row `0`-based index holds: a folder to open, or
     /// a game to take.
     BrowseEnter(usize),
@@ -91,6 +95,8 @@ enum Screen {
     StateRename(usize),
     /// The ways of putting games on the shelf, which is what the plus opens.
     AddRom,
+    /// The orders the shelf can be read in.
+    Sort,
     /// What can be done with one cartridge of the library, besides playing it.
     RomActions(usize),
     /// Naming one cartridge.
@@ -142,6 +148,7 @@ pub struct Menu {
     settings: GridFocus,
     /// The plus's sheet, whose rows are neither the cart's nor the pause screen's.
     add: GridFocus,
+    sort: GridFocus,
     /// The settings pages walked through to reach the one on screen, each with the
     /// row it was left on, so backing out lands where it was opened from. Always
     /// empty outside the settings: the last Back is what leaves them.
@@ -228,7 +235,7 @@ impl Menu {
             }
             Screen::Library => match self.library.nav(action)? {
                 LibraryPick::Rom(index) => Some(UiCmd::LaunchRom(index)),
-                LibraryPick::Header(event) => self.library_event(event),
+                LibraryPick::Header(event) => self.library_event(event, views),
                 // Backing out of the library only makes sense with a game to
                 // return to, and then the overlay is where we came from.
                 LibraryPick::Back => (self.opener == Screen::Pause).then(|| {
@@ -276,6 +283,17 @@ impl Menu {
                     let action = library::add_at(row)?;
 
                     Some(self.act_on_add(action))
+                }
+                FocusEvent::Back => {
+                    self.screen = Screen::Library;
+                    None
+                }
+            },
+            Screen::Sort => match self.sort.nav(action)? {
+                FocusEvent::Activate(row) => {
+                    let sort = library::sort_at(row)?;
+
+                    Some(self.act_on_sort(sort))
                 }
                 FocusEvent::Back => {
                     self.screen = Screen::Library;
@@ -402,7 +420,7 @@ impl Menu {
     }
 
     /// What the header asks for, however it was asked — a press or a click.
-    fn library_event(&mut self, event: LibraryEvent) -> Option<UiCmd> {
+    fn library_event(&mut self, event: LibraryEvent, views: &Views<'_>) -> Option<UiCmd> {
         match event {
             LibraryEvent::OpenSettings => {
                 self.screen = Screen::Settings(ROOT_PAGE);
@@ -415,7 +433,23 @@ impl Menu {
 
                 None
             }
+            // Opened on the order the shelf is already in, so the sheet says which
+            // one that is without a mark of its own.
+            LibraryEvent::Sort => {
+                self.sort = GridFocus::default();
+                self.sort.sync(library::sort_count(), 1);
+                self.sort.focus(library::sort_row(views.library.sort));
+                self.screen = Screen::Sort;
+
+                None
+            }
         }
+    }
+
+    fn act_on_sort(&mut self, sort: SortBy) -> UiCmd {
+        self.screen = Screen::Library;
+
+        UiCmd::SortLibrary(sort)
     }
 
     /// Either row is done with the sheet: the platform takes over from here, with a
@@ -588,7 +622,7 @@ impl Menu {
                 let asked = library(root, &views.library, &mut self.library, covers, out);
 
                 if let Some(event) = asked {
-                    out.extend(self.library_event(event));
+                    out.extend(self.library_event(event, views));
                 }
             }
             Screen::Pause => self.pause_overlay(root, out),
@@ -635,6 +669,11 @@ impl Menu {
             Screen::AddRom => {
                 if let Some(action) = library::show_add(root, &mut self.add) {
                     out.push(self.act_on_add(action));
+                }
+            }
+            Screen::Sort => {
+                if let Some(sort) = library::show_sort(root, &mut self.sort) {
+                    out.push(self.act_on_sort(sort));
                 }
             }
             Screen::RomActions(index) => {
@@ -792,6 +831,7 @@ mod tests {
             library: LibraryView {
                 entries: &[],
                 version: 0,
+                sort: SortBy::default(),
             },
             settings,
             states: &EMPTY_STATES,
@@ -916,6 +956,41 @@ mod tests {
         // On the shelf again: Back there is what leaves, and with no game to return
         // to there is nowhere to go.
         assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
+    }
+
+    /// Walks the header to the sort button and opens its sheet.
+    fn on_the_sort_sheet(view: &SettingsView) -> Menu {
+        let mut menu = on_the_plus();
+        menu.nav(NavAction::Right, &views(view));
+        menu.nav(NavAction::Confirm, &views(view));
+
+        menu
+    }
+
+    /// The sheet is presented already standing on the order in force, which is what
+    /// tells the user which one that is.
+    #[test]
+    fn the_sort_sheet_opens_on_the_order_in_force() {
+        let view = nested();
+        let mut menu = on_the_sort_sheet(&view);
+
+        assert_eq!(
+            menu.nav(NavAction::Confirm, &views(&view)),
+            Some(UiCmd::SortLibrary(SortBy::Recent)),
+            "the view's own order, which the fixture leaves at the default"
+        );
+    }
+
+    #[test]
+    fn another_order_is_asked_for_by_walking_to_it() {
+        let view = nested();
+        let mut menu = on_the_sort_sheet(&view);
+
+        assert_eq!(menu.nav(NavAction::Up, &views(&view)), None);
+        assert_eq!(
+            menu.nav(NavAction::Confirm, &views(&view)),
+            Some(UiCmd::SortLibrary(SortBy::Name))
+        );
     }
 
     /// The UI can be closed from anywhere, so a page left open must not leave a trail

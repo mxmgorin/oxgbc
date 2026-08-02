@@ -19,7 +19,7 @@ pub mod theme;
 pub use browse::{BrowseEntry, BrowseTarget, BrowseView};
 pub use cart::CartKind;
 pub use image::RgbImage;
-pub use library::{LibraryView, RomEntry};
+pub use library::{LibraryView, RomEntry, SortBy};
 pub use menu::{Menu, UiCmd, Views};
 pub use nav::NavAction;
 pub use settings::{Control, Page, PageId, Row, Section, SettingId, SettingsView, ROOT_PAGE};

@@ -26,6 +26,16 @@ pub struct AppConfig {
     pub audio: AudioConfig,
     pub video: VideoConfig,
     pub input: InputConfig,
+    #[serde(default)]
+    pub library_sort: LibrarySort,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Default)]
+pub enum LibrarySort {
+    #[default]
+    Recent,
+    Name,
+    Playtime,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
@@ -256,6 +266,7 @@ impl Default for AppConfig {
                 channel_mask: apu_config.channel_mask,
             },
             input: InputConfig::default(),
+            library_sort: LibrarySort::default(),
             video: VideoConfig {
                 interface: InterfaceConfig {
                     selected_palette_idx: 0,
