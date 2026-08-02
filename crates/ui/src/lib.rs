@@ -9,6 +9,7 @@ pub mod image;
 pub mod library;
 pub mod menu;
 pub mod nav;
+mod osk;
 mod overlay;
 pub mod rename;
 pub mod settings;

@@ -1,10 +1,13 @@
-//! Naming something: a save state, a cartridge. Typing needs a keyboard, so the
-//! two ways out are buttons a gamepad can reach — its events never pass through
-//! egui, and so are unaffected by the text field holding the keyboard.
+//! Naming something: a save state, a cartridge. The field takes a keyboard where
+//! there is one, and the on-screen keyboard under for a gamepad.
 
-use crate::nav::{FocusEvent, GridFocus, NavAction};
+use crate::nav::NavAction;
+use crate::osk::{self, Osk, OskEvent};
 use crate::overlay;
-use crate::theme::{self, ROW_GAP, ROW_HEIGHT, WIDTH_PANEL};
+use crate::theme::{self, ROW_GAP, ROW_HEIGHT, WIDTH_PAGE};
+use egui::text::CCursor;
+use egui::text_edit::TextEditState;
+use egui::text_selection::CCursorRange;
 use egui::{Ui, Vec2};
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -13,22 +16,22 @@ pub enum RenameEvent {
     Cancel,
 }
 
-/// Save sits on the right, where the action that goes through belongs.
-const ACTIONS: [(&str, RenameEvent); 2] = [
-    ("Cancel", RenameEvent::Cancel),
-    ("Save", RenameEvent::Commit),
-];
-
-/// Room for the heading and the hint under the buttons.
+/// Room for the heading and the hint around the field.
 const TITLE_HEIGHT: f32 = ROW_HEIGHT + ROW_GAP;
 
-/// The name being typed, which of the two buttons is picked, and whether the field
-/// still has to take focus — egui only routes the keyboard to a widget that has it.
+/// The name being typed, where the on-screen keyboard is, and whether the field
+/// still has to take focus - egui only routes the keyboard to a widget that has it.
 #[derive(Default)]
 pub struct RenameEdit {
     text: String,
-    focus: GridFocus,
+    osk: Osk,
     grab: bool,
+    /// Where the next key lands, in characters. Kept here as well as in the field
+    /// because the keyboard types between frames, when the field's own state is not
+    /// there to be reached.
+    caret: usize,
+    /// Set when this side moved the caret, so the field is told rather than asked.
+    moved: bool,
 }
 
 impl RenameEdit {
@@ -36,44 +39,78 @@ impl RenameEdit {
     pub fn start(&mut self, name: &str) {
         self.text = name.to_owned();
         self.grab = true;
-        self.focus = GridFocus::default();
-        // One row of buttons, so Left/Right walk it.
-        self.focus.sync(ACTIONS.len(), ACTIONS.len());
-        // Start on the action that keeps what was typed, wherever it sits.
-        self.focus.focus(commit_index());
+        self.caret = self.text.chars().count();
+        self.moved = true;
+        self.osk.reset();
     }
 
     /// Directional input from a gamepad, which egui never sees.
     pub fn nav(&mut self, action: NavAction) -> Option<RenameEvent> {
-        match self.focus.nav(action)? {
-            FocusEvent::Activate(index) => action_at(index),
-            FocusEvent::Back => Some(RenameEvent::Cancel),
-        }
+        let event = self.osk.nav(action)?;
+
+        self.apply(event)
     }
 
     pub fn take_text(&mut self) -> String {
         std::mem::take(&mut self.text)
     }
+
+    /// Typing lands where the caret is, so the keyboard and the field edit the same
+    /// name from the same place.
+    fn apply(&mut self, event: OskEvent) -> Option<RenameEvent> {
+        match event {
+            OskEvent::Type(key) => {
+                self.text.insert(self.byte_at(self.caret), key);
+                self.caret += 1;
+            }
+            OskEvent::Backspace => {
+                if self.caret == 0 {
+                    return None;
+                }
+
+                self.caret -= 1;
+                self.text.remove(self.byte_at(self.caret));
+            }
+            OskEvent::Commit => return Some(RenameEvent::Commit),
+            OskEvent::Cancel => return Some(RenameEvent::Cancel),
+        }
+
+        self.moved = true;
+        // The click that typed took the keyboard away from the field.
+        self.grab = true;
+
+        None
+    }
+
+    fn byte_at(&self, caret: usize) -> usize {
+        self.text
+            .char_indices()
+            .nth(caret)
+            .map_or(self.text.len(), |(at, _)| at)
+    }
 }
 
-fn action_at(index: usize) -> Option<RenameEvent> {
-    ACTIONS.get(index).map(|(_, event)| *event)
-}
+fn sync_caret(ui: &Ui, field: egui::Id, edit: &mut RenameEdit) {
+    let Some(mut state) = TextEditState::load(ui.ctx(), field) else {
+        return;
+    };
 
-fn commit_index() -> usize {
-    ACTIONS
-        .iter()
-        .position(|(_, event)| *event == RenameEvent::Commit)
-        .expect("ACTIONS always offers a way to commit")
+    if std::mem::take(&mut edit.moved) {
+        let at = CCursor::new(edit.caret);
+        state.cursor.set_char_range(Some(CCursorRange::one(at)));
+        state.store(ui.ctx(), field);
+    } else if let Some(range) = state.cursor.char_range() {
+        edit.caret = usize::from(range.primary.index).min(edit.text.chars().count());
+    }
 }
 
 /// `title` heads the screen and `hint` says what an empty name falls back to —
 /// both differ between the things that can be named.
 pub fn show(root: &mut Ui, title: &str, hint: &str, edit: &mut RenameEdit) -> Option<RenameEvent> {
-    let height = TITLE_HEIGHT * 2.0 + overlay::rows_height(ACTIONS.len());
+    let height = TITLE_HEIGHT * 2.0 + ROW_HEIGHT + osk::height();
     let mut event = None;
 
-    overlay::popup(root, Vec2::new(WIDTH_PANEL, height), |ui| {
+    overlay::popup(root, Vec2::new(WIDTH_PAGE, height), |ui| {
         theme::heading(ui, title);
         let field = ui.add_sized(
             [ui.available_width(), ROW_HEIGHT],
@@ -84,9 +121,11 @@ pub fn show(root: &mut Ui, title: &str, hint: &str, edit: &mut RenameEdit) -> Op
             field.request_focus();
         }
 
+        sync_caret(ui, field.id, edit);
+
         // The field has already handled the keystroke by the time we get here, so
         // both keys read as focus going away. Losing it any other way — a click on
-        // one of the buttons, or outside — leaves the screen up for them to answer.
+        // the keyboard, or outside — leaves the screen up.
         if field.lost_focus() {
             let (enter, escape) = ui.input(|i| {
                 (
@@ -102,28 +141,9 @@ pub fn show(root: &mut Ui, title: &str, hint: &str, edit: &mut RenameEdit) -> Op
             }
         }
 
-        edit.focus.sync(ACTIONS.len(), ACTIONS.len());
-
-        ui.horizontal(|ui| {
-            let width = (ui.available_width() - ROW_GAP) / ACTIONS.len() as f32;
-
-            for (index, (label, action)) in ACTIONS.iter().enumerate() {
-                let focused = edit.focus.is_focused(index);
-                let response = ui.add_sized(
-                    [width, ROW_HEIGHT],
-                    egui::Button::selectable(focused, *label),
-                );
-
-                if response.hovered() {
-                    edit.focus.focus(index);
-                }
-
-                // A click wins over the focus the field just gave up because of it.
-                if response.clicked() {
-                    event = Some(*action);
-                }
-            }
-        });
+        if let Some(clicked) = osk::show(ui, &mut edit.osk) {
+            event = edit.apply(clicked).or(event);
+        }
 
         ui.weak("Enter to save, Esc to cancel");
     });
@@ -135,17 +155,43 @@ pub fn show(root: &mut Ui, title: &str, hint: &str, edit: &mut RenameEdit) -> Op
 mod tests {
     use super::*;
 
-    /// A gamepad can't type, so both ways out have to be reachable by moving. Save
-    /// is focused to begin with, whichever side of the row it is drawn on.
+    /// A gamepad types on the keyboard and leaves by its own keys, so no part of a
+    /// rename needs a keyboard to reach.
     #[test]
-    fn the_buttons_answer_directional_input() {
+    fn a_gamepad_types_and_gets_out() {
         let mut edit = RenameEdit::default();
-        edit.start("before the boss");
+        edit.start("NES");
 
-        assert_eq!(edit.nav(NavAction::Confirm), Some(RenameEvent::Commit));
-        assert_eq!(edit.nav(NavAction::Left), None);
-        assert_eq!(edit.nav(NavAction::Confirm), Some(RenameEvent::Cancel));
+        // Down to the letters, then along to `w`.
+        edit.nav(NavAction::Down);
+        edit.nav(NavAction::Right);
+        assert_eq!(edit.nav(NavAction::Confirm), None);
+        assert_eq!(edit.text, "NESw");
+
+        assert_eq!(edit.nav(NavAction::Options), Some(RenameEvent::Commit));
         assert_eq!(edit.nav(NavAction::Back), Some(RenameEvent::Cancel));
+    }
+
+    /// The caret is the field's, so a key lands where it stands rather than on the
+    /// end — and a name with a wide character in it counts in characters, not bytes.
+    #[test]
+    fn typing_lands_at_the_caret() {
+        let mut edit = RenameEdit::default();
+        edit.start("héro");
+        edit.caret = 2;
+
+        assert_eq!(edit.apply(OskEvent::Type('x')), None);
+        assert_eq!(edit.text, "héxro");
+        assert_eq!(edit.caret, 3);
+
+        assert_eq!(edit.apply(OskEvent::Backspace), None);
+        assert_eq!(edit.text, "héro");
+        assert_eq!(edit.caret, 2);
+
+        // Nothing before the start of the name to erase.
+        edit.caret = 0;
+        assert_eq!(edit.apply(OskEvent::Backspace), None);
+        assert_eq!(edit.text, "héro");
     }
 
     #[test]
