@@ -204,7 +204,7 @@ where
         if let Some(new_fps) = fps {
             self.fps_str.clear();
             write!(&mut self.fps_str, "{new_fps:.2}").unwrap();
-            self.video.ui.fill_fps(fb, &self.fps_str);
+            self.video.overlay.fill_fps(fb, &self.fps_str);
         }
 
         self.video.draw_buffer(fb);
@@ -240,7 +240,7 @@ where
     #[inline(always)]
     pub fn update_notif(&mut self, fb: &mut FrameBuffer) {
         let (lines, updated) = self.notifications.update_and_get();
-        self.video.ui.fill_notif(fb, lines);
+        self.video.overlay.fill_notif(fb, lines);
 
         if updated {
             self.frontend.request_update();
@@ -322,8 +322,8 @@ where
             .video
             .interface
             .get_palette_colors(&self.palettes);
-        self.video.ui.text_color = colors[0];
-        self.video.ui.bg_color = colors[3];
+        self.video.overlay.text_color = colors[0];
+        self.video.overlay.bg_color = colors[3];
         self.apply_dmg_palette(emu, colors);
         self.frontend.request_update();
 

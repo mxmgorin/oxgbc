@@ -3,6 +3,8 @@ use crate::video::frame_blend::FrameBlend;
 use crate::video::gl_backend::GlBackend;
 use crate::video::overlay::Overlay;
 use crate::video::sdl2_backend::Sdl2Backend;
+#[cfg(feature = "frontend-modern")]
+use crate::video::DrawUi;
 use crate::video::{calc_win_height, calc_win_width, new_scaled_rect, VideoBackend};
 use core::ppu::tile::PixelColor;
 use core::ppu::tile::TileData;
@@ -15,7 +17,7 @@ pub struct AppVideo {
     config: VideoConfig,
     last_render_time: Instant,
     pub min_render_interval: Duration,
-    pub ui: Overlay,
+    pub overlay: Overlay,
 }
 
 impl AppVideo {
@@ -41,7 +43,7 @@ impl AppVideo {
             }
         };
         backend.set_fullscreen(config.interface.is_fullscreen, config.interface.scale_mode);
-        let ui = Overlay::new(text_color, bg_color);
+        let overlay = Overlay::new(text_color, bg_color);
 
         Ok(Self {
             frame_blend: FrameBlend::new(&config.render.frame_blend_mode),
@@ -49,7 +51,7 @@ impl AppVideo {
             last_render_time: Instant::now(),
             min_render_interval: config.render.calc_min_frame_interval(),
             backend,
-            ui,
+            overlay,
         })
     }
 
@@ -79,8 +81,8 @@ impl AppVideo {
     }
 
     #[inline(always)]
-    pub fn draw_menu(&mut self, buffer: &[u8]) {
-        self.backend.draw_menu(buffer, &self.config)
+    pub fn draw_backdrop(&mut self, buffer: &[u8]) {
+        self.backend.draw_backdrop(buffer, &self.config)
     }
 
     #[inline(always)]
@@ -111,27 +113,27 @@ impl AppVideo {
         self.backend.handle_resize(mode);
     }
 
-    /// Returns whether egui consumed the event.
+    /// Returns whether the UI took the event.
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
-        self.backend.egui_on_event(event)
+    pub fn ui_took_event(&mut self, event: &sdl2::event::Event) -> bool {
+        self.backend.ui_took_event(event)
     }
 
-    /// Draws egui over the frame already drawn; [`Self::render`] presents it.
+    /// Draws the UI over the frame already drawn; [`Self::render`] presents it.
     #[cfg(feature = "frontend-modern")]
-    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&mut egui_sdl2::egui::Ui)) {
-        self.backend.render_egui(run_ui);
+    pub fn draw_ui(&mut self, run_ui: DrawUi) {
+        self.backend.draw_ui(run_ui);
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_repaint_delay(&self) -> Duration {
-        self.backend.egui_repaint_delay()
+    pub fn ui_frame_delay(&self) -> Duration {
+        self.backend.ui_frame_delay()
     }
 }
 
 #[cfg(feature = "frontend-modern")]
 impl Drop for AppVideo {
     fn drop(&mut self) {
-        self.backend.destroy_egui();
+        self.backend.destroy_ui();
     }
 }

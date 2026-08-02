@@ -94,10 +94,10 @@ impl Frontend for RetroFrontend {
         let (items, updated) = self.menu.get_items(ctx.config, ctx.roms);
 
         if updated {
-            video.ui.fill_menu(fb, items, true, true);
+            video.overlay.fill_menu(fb, items, true, true);
         }
 
-        video.draw_menu(fb);
+        video.draw_backdrop(fb);
     }
 
     #[inline(always)]

@@ -1,6 +1,8 @@
 use crate::config::{RenderConfig, ScaleMode, VideoConfig};
 use crate::video::sdl2_filters::Sdl2Filters;
 use crate::video::sdl2_tiles::Sdl2TilesView;
+#[cfg(feature = "frontend-modern")]
+use crate::video::DrawUi;
 use crate::video::{calc_win_height, calc_win_width, new_scaled_rect};
 use core::ppu::tile::TileData;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -95,7 +97,7 @@ impl Sdl2Backend {
         self.filters.apply(&mut self.canvas, &config.render.sdl2);
     }
 
-    pub fn draw_menu(&mut self, buffer: &[u8], config: &VideoConfig) {
+    pub fn draw_backdrop(&mut self, buffer: &[u8], config: &VideoConfig) {
         self.clear();
 
         self.game_texture
@@ -111,26 +113,26 @@ impl Sdl2Backend {
         self.canvas.present();
     }
 
-    /// Returns whether egui consumed the event.
+    /// Returns whether the UI took the event.
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
+    pub fn ui_took_event(&mut self, event: &sdl2::event::Event) -> bool {
         self.egui.on_event(&self.canvas, event).consumed
     }
 
     /// Runs and paints egui over the frame already drawn; [`Self::show`] presents.
     #[cfg(feature = "frontend-modern")]
-    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&mut egui_sdl2::egui::Ui)) {
+    pub fn draw_ui(&mut self, run_ui: DrawUi) {
         self.egui.run_ui(run_ui);
         self.egui.paint(&mut self.canvas);
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_repaint_delay(&self) -> std::time::Duration {
+    pub fn ui_frame_delay(&self) -> std::time::Duration {
         self.egui.repaint_delay()
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn destroy_egui(&mut self) {
+    pub fn destroy_ui(&mut self) {
         self.egui.destroy();
     }
 

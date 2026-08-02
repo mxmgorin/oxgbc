@@ -80,7 +80,7 @@ impl InputHandler {
             // egui tracks window size and focus even while the game runs, but
             // only owns the input while its UI is up.
             #[cfg(feature = "frontend-modern")]
-            if app.video.egui_on_event(&event) && app.state == AppState::Paused {
+            if app.video.ui_took_event(&event) && app.state == AppState::Paused {
                 continue;
             }
 

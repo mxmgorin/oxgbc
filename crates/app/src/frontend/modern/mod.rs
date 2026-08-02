@@ -159,7 +159,7 @@ impl Frontend for ModernFrontend {
         self.refresh(&ctx);
         self.refresh_shot(&ctx);
         self.refresh_cover_states();
-        video.draw_menu(fb);
+        video.draw_backdrop(fb);
 
         let views = ui::Views {
             library: ui::LibraryView {
@@ -174,7 +174,7 @@ impl Frontend for ModernFrontend {
         };
         let menu = &mut self.menu;
         let mut cmds = Vec::new();
-        video.render_egui(&mut |egui_ui| menu.show(egui_ui, &views, &mut cmds));
+        video.draw_ui(&mut |root| menu.show(root, &views, &mut cmds));
 
         for cmd in cmds {
             if let Some(cmd) = self.app_cmd(cmd, ctx.config) {
@@ -182,7 +182,7 @@ impl Frontend for ModernFrontend {
             }
         }
 
-        self.frame_delay = video.egui_repaint_delay().min(MAX_FRAME_DELAY);
+        self.frame_delay = video.ui_frame_delay().min(MAX_FRAME_DELAY);
     }
 
     fn frame_delay(&self) -> Duration {

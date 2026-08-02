@@ -1,5 +1,7 @@
 use crate::config::{RenderConfig, ScaleMode};
 use crate::video::shader::{ShaderFrameBlendMode, ShaderPrecision};
+#[cfg(feature = "frontend-modern")]
+use crate::video::DrawUi;
 use crate::video::{calc_win_height, calc_win_width, new_scaled_rect, shader};
 use gl::types::{GLenum, GLint};
 use sdl2::rect::Rect;
@@ -86,7 +88,7 @@ impl GlBackend {
         }
     }
 
-    pub fn draw_menu(&mut self, buffer: &[u8]) {
+    pub fn draw_backdrop(&mut self, buffer: &[u8]) {
         // Uniforms apply to the bound program, and egui's is still bound after it
         // painted the previous frame.
         unsafe {
@@ -218,26 +220,26 @@ impl GlBackend {
         self.gl.window.gl_swap_window();
     }
 
-    /// Returns whether egui consumed the event.
+    /// Returns whether the UI took the event.
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
+    pub fn ui_took_event(&mut self, event: &sdl2::event::Event) -> bool {
         self.egui.on_event(&self.gl.window, event).consumed
     }
 
     /// Runs and paints egui over the frame already drawn; [`Self::show`] presents.
     #[cfg(feature = "frontend-modern")]
-    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&mut egui_sdl2::egui::Ui)) {
+    pub fn draw_ui(&mut self, run_ui: DrawUi) {
         self.egui.run_ui(run_ui);
         self.egui.paint();
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_repaint_delay(&self) -> std::time::Duration {
+    pub fn ui_frame_delay(&self) -> std::time::Duration {
         self.egui.repaint_delay()
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn destroy_egui(&mut self) {
+    pub fn destroy_ui(&mut self) {
         self.egui.destroy();
     }
 

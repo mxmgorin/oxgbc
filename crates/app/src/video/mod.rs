@@ -23,6 +23,10 @@ mod sdl2_backend;
 pub mod sdl2_tiles;
 pub mod shader;
 
+/// Paints one frame of the UI. The only place this side names the toolkit.
+#[cfg(feature = "frontend-modern")]
+pub type DrawUi<'a> = &'a mut dyn FnMut(&mut egui_sdl2::egui::Ui);
+
 pub fn calc_win_height(scale: u32) -> u32 {
     LCD_Y_RES as u32 * scale
 }
@@ -174,10 +178,10 @@ impl VideoBackend {
     }
 
     #[inline]
-    pub fn draw_menu(&mut self, buffer: &[u8], config: &VideoConfig) {
+    pub fn draw_backdrop(&mut self, buffer: &[u8], config: &VideoConfig) {
         match self {
-            VideoBackend::Sdl2(x) => x.draw_menu(buffer, config),
-            VideoBackend::Gl(x) => x.draw_menu(buffer),
+            VideoBackend::Sdl2(x) => x.draw_backdrop(buffer, config),
+            VideoBackend::Gl(x) => x.draw_backdrop(buffer),
         }
     }
 
@@ -230,36 +234,36 @@ impl VideoBackend {
         }
     }
 
-    /// Returns whether egui consumed the event.
+    /// Returns whether the UI took the event.
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_on_event(&mut self, event: &sdl2::event::Event) -> bool {
+    pub fn ui_took_event(&mut self, event: &sdl2::event::Event) -> bool {
         match self {
-            VideoBackend::Sdl2(x) => x.egui_on_event(event),
-            VideoBackend::Gl(x) => x.egui_on_event(event),
+            VideoBackend::Sdl2(x) => x.ui_took_event(event),
+            VideoBackend::Gl(x) => x.ui_took_event(event),
         }
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn render_egui(&mut self, run_ui: &mut dyn FnMut(&mut egui_sdl2::egui::Ui)) {
+    pub fn draw_ui(&mut self, run_ui: DrawUi) {
         match self {
-            VideoBackend::Sdl2(x) => x.render_egui(run_ui),
-            VideoBackend::Gl(x) => x.render_egui(run_ui),
+            VideoBackend::Sdl2(x) => x.draw_ui(run_ui),
+            VideoBackend::Gl(x) => x.draw_ui(run_ui),
         }
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn egui_repaint_delay(&self) -> std::time::Duration {
+    pub fn ui_frame_delay(&self) -> std::time::Duration {
         match self {
-            VideoBackend::Sdl2(x) => x.egui_repaint_delay(),
-            VideoBackend::Gl(x) => x.egui_repaint_delay(),
+            VideoBackend::Sdl2(x) => x.ui_frame_delay(),
+            VideoBackend::Gl(x) => x.ui_frame_delay(),
         }
     }
 
     #[cfg(feature = "frontend-modern")]
-    pub fn destroy_egui(&mut self) {
+    pub fn destroy_ui(&mut self) {
         match self {
-            VideoBackend::Sdl2(x) => x.destroy_egui(),
-            VideoBackend::Gl(x) => x.destroy_egui(),
+            VideoBackend::Sdl2(x) => x.destroy_ui(),
+            VideoBackend::Gl(x) => x.destroy_ui(),
         }
     }
 }
