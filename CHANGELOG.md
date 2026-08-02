@@ -5,6 +5,23 @@ All notable changes to oxGBC are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple incrementing release number.
 
+## [0.21] - 2026-08-02
+
+### Fixed
+- Sprites vanished in DMG games that leave junk in the CGB object attribute bits:
+  the tile was fetched from VRAM bank 1, which such a game never writes.
+  Regression since 0.18.
+- LCDC.4 mid-fetch glitch read no longer applies while BG/window is disabled.
+
+### Changed
+- **Event-scheduled core: 29–40% less wall time.** Devices batch-advance to their
+  next event instead of ticking per M-cycle, idle DMAs leave the loop, and HALT
+  jumps to the next interrupt. A/B medians against the per-tick chain: cpu_instrs
+  −39.7%, SameSuite APU −28.7%, DMG game −29.0%, CGB game −33.4%.
+
+### Added
+- CLI: a `bench` command and `--state-trace` for the differential harness.
+
 ## [0.20] - 2026-07-22
 
 ### Added
