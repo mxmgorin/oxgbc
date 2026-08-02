@@ -7,8 +7,11 @@
 use crate::image::{RgbImage, TextureCache};
 use crate::menu::UiCmd;
 use crate::nav::GridFocus;
-use crate::overlay::{self, ROW_GAP, ROW_HEIGHT};
-use egui::{Align, Layout, Rect, ScrollArea, Sense, Ui, UiBuilder, Vec2};
+use crate::overlay;
+use crate::theme::{
+    self, ROW_GAP, ROW_HEIGHT, ROW_PAD, THUMB_ROW_HEIGHT, WIDTH_PANEL, WIDTH_SHEET,
+};
+use egui::{Align2, Rect, ScrollArea, Sense, Ui, Vec2};
 
 /// What the platform found on disk; how it reads is this side's business.
 #[derive(Default)]
@@ -73,22 +76,16 @@ const ACTIONS: [(&str, SlotAction); 5] = [
     ("Delete", SlotAction::Delete),
 ];
 
-const LIST_WIDTH: f32 = 380.0;
-const SHEET_WIDTH: f32 = 220.0;
 /// Pixel art only survives whole-number scaling, so the preview is drawn at 1x or
 /// 2x — never in between — and only goes to 2x while it stays under this much of
 /// the window's height.
 const SHOT_MAX_SCALE: f32 = 2.0;
 const SHOT_MAX_SCREEN: f32 = 0.4;
-/// A list row is taller than a plain one to make room for a thumbnail.
-const LIST_ROW_HEIGHT: f32 = 48.0;
-const THUMB_PAD: f32 = 4.0;
+const THUMB_PAD: f32 = theme::UNIT;
 /// Rows shown before the list starts scrolling.
 const MAX_ROWS: usize = 6;
 /// Room reserved for one line of title, which sits outside the row list.
 const TITLE_HEIGHT: f32 = ROW_HEIGHT + ROW_GAP;
-const ROW_ROUNDING: f32 = 4.0;
-const ROW_PAD: f32 = 8.0;
 
 /// A row of the list: where it leads, and what the slot holds.
 struct ListRow<'a> {
@@ -169,12 +166,12 @@ pub fn show(
     focus.sync(count, 1);
     shots.sync(view.version);
     let follow_focus = focus.take_moved();
-    let rows_height = |count| overlay::rows_height_of(count, LIST_ROW_HEIGHT);
+    let rows_height = |count| overlay::rows_height_of(count, THUMB_ROW_HEIGHT);
     let list = rows_height(count.max(1)).min(rows_height(MAX_ROWS));
     let mut picked = None;
 
-    overlay::popup(root, Vec2::new(LIST_WIDTH, TITLE_HEIGHT + list), |ui| {
-        ui.heading("Save states");
+    overlay::popup(root, Vec2::new(WIDTH_PANEL, TITLE_HEIGHT + list), |ui| {
+        theme::heading(ui, "Save states");
 
         if count == 0 {
             ui.label("No save states yet.");
@@ -204,7 +201,7 @@ fn show_row(
 ) -> bool {
     let focused = focus.is_focused(index);
     let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), LIST_ROW_HEIGHT),
+        egui::vec2(ui.available_width(), THUMB_ROW_HEIGHT),
         Sense::click(),
     );
 
@@ -214,14 +211,11 @@ fn show_row(
         focus.focus(index);
     }
 
-    if focused {
-        ui.painter()
-            .rect_filled(rect, ROW_ROUNDING, ui.visuals().selection.bg_fill);
+    let bloom = theme::paint_focus(ui, response.id, rect, focused);
 
-        // Directional input can walk the highlight out of the list; bring it back.
-        if follow_focus {
-            ui.scroll_to_rect(rect, None);
-        }
+    // Directional input can walk the highlight out of the list; bring it back.
+    if focused && follow_focus {
+        ui.scroll_to_rect(rect, None);
     }
 
     let (label, detail) = match row.state {
@@ -247,13 +241,24 @@ fn show_row(
         text.set_left(thumb.right() + ROW_PAD);
     }
 
-    let mut row_ui = ui.new_child(
-        UiBuilder::new()
-            .max_rect(text)
-            .layout(Layout::left_to_right(Align::Center)),
+    // The detail goes down first, so the label knows how much room it was left and
+    // gets cut rather than running under it.
+    let detail_width = theme::label(
+        ui,
+        text,
+        Align2::RIGHT_CENTER,
+        detail,
+        theme::detail_color(ui, bloom),
     );
-    row_ui.label(label);
-    row_ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.weak(detail));
+    let mut label_rect = text;
+    label_rect.set_right((text.right() - detail_width - ROW_GAP).max(text.left()));
+    theme::label(
+        ui,
+        label_rect,
+        Align2::LEFT_CENTER,
+        label,
+        theme::label_color(ui, bloom),
+    );
 
     response.clicked()
 }
@@ -287,22 +292,22 @@ pub fn show_actions(
         + preview.map_or(0.0, |size| size.y + ROW_GAP)
         + overlay::rows_height(action_count());
     // Wide enough for the preview, since the sheet is otherwise narrower than one.
-    let width = preview.map_or(SHEET_WIDTH, |size| size.x.max(SHEET_WIDTH));
+    let width = preview.map_or(WIDTH_SHEET, |size| size.x.max(WIDTH_SHEET));
     let mut clicked = None;
 
     overlay::popup(root, Vec2::new(width, height), |ui| {
         match state {
             // A named state says which slot it is in, since the name replaced it.
             Some(state) if !state.name.is_empty() => {
-                ui.heading(&state.name);
+                theme::heading(ui, &state.name);
                 ui.weak(format!("Slot {slot} · {}", state.saved));
             }
             Some(state) => {
-                ui.heading(format!("Slot {slot}"));
+                theme::heading(ui, format!("Slot {slot}"));
                 ui.weak(&state.saved);
             }
             None => {
-                ui.heading(format!("Slot {slot}"));
+                theme::heading(ui, format!("Slot {slot}"));
             }
         }
 

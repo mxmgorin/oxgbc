@@ -7,8 +7,9 @@
 //! and says which row was picked.
 
 use crate::nav::GridFocus;
-use crate::overlay::{self, ROW_GAP, ROW_HEIGHT};
-use egui::{Align, Layout, ScrollArea, Sense, Ui, UiBuilder, Vec2};
+use crate::overlay;
+use crate::theme::{self, ROW_GAP, ROW_HEIGHT, ROW_PAD, WIDTH_PANEL};
+use egui::{Align2, ScrollArea, Sense, Ui, Vec2};
 
 /// What is being picked, which is all this side needs to know: a folder walk has a
 /// row for taking the one it is standing in.
@@ -42,11 +43,8 @@ pub enum BrowsePick {
     ChooseDir,
 }
 
-const WIDTH: f32 = 420.0;
 const MAX_ROWS: usize = 10;
 const TITLE_HEIGHT: f32 = ROW_HEIGHT + ROW_GAP;
-const ROW_ROUNDING: f32 = 4.0;
-const ROW_PAD: f32 = 8.0;
 const CHOOSE_DIR: &str = "Use this folder";
 
 pub fn row_count(view: &BrowseView) -> usize {
@@ -69,8 +67,8 @@ pub fn show(root: &mut Ui, view: &BrowseView, focus: &mut GridFocus) -> Option<B
     let list = overlay::rows_height(count.max(1)).min(overlay::rows_height(MAX_ROWS));
     let mut picked = None;
 
-    overlay::popup(root, Vec2::new(WIDTH, TITLE_HEIGHT + list), |ui| {
-        ui.heading(&view.path);
+    overlay::popup(root, Vec2::new(WIDTH_PANEL, TITLE_HEIGHT + list), |ui| {
+        theme::heading(ui, &view.path);
 
         ScrollArea::vertical().show(ui, |ui| {
             for (index, entry) in view.entries.iter().enumerate() {
@@ -116,22 +114,20 @@ fn show_row(
         focus.focus(index);
     }
 
-    if focused {
-        ui.painter()
-            .rect_filled(rect, ROW_ROUNDING, ui.visuals().selection.bg_fill);
+    let bloom = theme::paint_focus(ui, response.id, rect, focused);
 
-        // Directional input can walk the highlight out of the list; bring it back.
-        if follow_focus {
-            ui.scroll_to_rect(rect, None);
-        }
+    // Directional input can walk the highlight out of the list; bring it back.
+    if focused && follow_focus {
+        ui.scroll_to_rect(rect, None);
     }
 
-    let mut row = ui.new_child(
-        UiBuilder::new()
-            .max_rect(rect.shrink2(egui::vec2(ROW_PAD, 0.0)))
-            .layout(Layout::left_to_right(Align::Center)),
+    theme::label(
+        ui,
+        rect.shrink2(egui::vec2(ROW_PAD, 0.0)),
+        Align2::LEFT_CENTER,
+        label,
+        theme::label_color(ui, bloom),
     );
-    row.label(label);
 
     response.clicked()
 }

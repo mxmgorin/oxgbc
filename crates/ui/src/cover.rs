@@ -6,6 +6,7 @@
 
 use crate::nav::GridFocus;
 use crate::overlay;
+use crate::theme::{self, WIDTH_SHEET};
 use egui::{Ui, Vec2};
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -23,8 +24,6 @@ pub struct CoverOffer {
     pub has_cover: bool,
     pub has_states: bool,
 }
-
-const SHEET_WIDTH: f32 = 260.0;
 
 fn rows(offer: CoverOffer) -> impl Iterator<Item = (&'static str, CoverAction)> {
     [
@@ -57,8 +56,8 @@ pub fn show_actions(
     let height = overlay::title_height() + overlay::rows_height(count);
     let mut clicked = None;
 
-    overlay::popup(root, Vec2::new(SHEET_WIDTH, height), |ui| {
-        ui.heading(title);
+    overlay::popup(root, Vec2::new(WIDTH_SHEET, height), |ui| {
+        theme::heading(ui, title);
         clicked = overlay::rows(ui, rows(offer).map(|(label, _)| label), focus);
     });
 

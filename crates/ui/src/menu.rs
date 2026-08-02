@@ -13,6 +13,7 @@ use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
 use crate::settings::{row_at, settings, SettingId, SettingsView};
 use crate::states::{self, RowPick, StatesView};
+use crate::theme::WIDTH_SHEET;
 use egui::Vec2;
 
 /// A request only the platform can carry out. Not `Copy`: a rename carries the
@@ -124,7 +125,6 @@ const PAUSE_ITEMS: [(&str, PauseAction); 6] = [
     ("Settings", PauseAction::Open(Screen::Settings)),
     ("Quit", PauseAction::Cmd(UiCmd::Quit)),
 ];
-const OVERLAY_WIDTH: f32 = 260.0;
 
 #[derive(Default)]
 pub struct Menu {
@@ -621,7 +621,7 @@ impl Menu {
 
     fn pause_overlay(&mut self, root: &mut egui::Ui, out: &mut Vec<UiCmd>) {
         self.pause.sync(PAUSE_ITEMS.len(), 1);
-        let size = Vec2::new(OVERLAY_WIDTH, overlay::rows_height(PAUSE_ITEMS.len()));
+        let size = Vec2::new(WIDTH_SHEET, overlay::rows_height(PAUSE_ITEMS.len()));
         let pause = &mut self.pause;
         let mut clicked = None;
 

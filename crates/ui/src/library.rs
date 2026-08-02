@@ -6,6 +6,7 @@ use crate::image::{RgbImage, TextureCache};
 use crate::menu::UiCmd;
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
+use crate::theme::{self, ROW_PAD, WIDTH_SHEET};
 use egui::{Rect, Sense, Ui, Vec2};
 
 /// Read-model the platform fills in; the screen never reaches into app state.
@@ -33,7 +34,6 @@ pub enum RomAction {
 
 const ACTIONS: [(&str, RomAction); 2] =
     [("Rename", RomAction::Rename), ("Cover", RomAction::Cover)];
-const SHEET_WIDTH: f32 = 260.0;
 
 pub fn action_count() -> usize {
     ACTIONS.len()
@@ -48,8 +48,8 @@ pub fn show_actions(root: &mut Ui, title: &str, focus: &mut GridFocus) -> Option
     let height = overlay::title_height() + overlay::rows_height(action_count());
     let mut clicked = None;
 
-    overlay::popup(root, Vec2::new(SHEET_WIDTH, height), |ui| {
-        ui.heading(title);
+    overlay::popup(root, Vec2::new(WIDTH_SHEET, height), |ui| {
+        theme::heading(ui, title);
         clicked = overlay::rows(ui, ACTIONS.iter().map(|(label, _)| *label), focus);
     });
 
@@ -180,26 +180,31 @@ pub fn library(
     covers.sync(view.version);
 
     egui::CentralPanel::default().show(root, |ui| {
-        ui.horizontal(|ui| {
-            ui.heading("Library");
-            // Right to left, so the group sits at the far end; reversed, so the
-            // buttons still read in the order the focus walks them.
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                for (index, (glyph, hint, asked)) in HEADER.iter().enumerate().rev() {
-                    let focused = focus.on_header && focus.header.is_focused(index);
-                    let icon = egui::RichText::new(*glyph).size(ICON_SIZE);
-                    let response = ui.add(egui::Button::selectable(focused, icon));
+        theme::page(ui);
+        // The title and the buttons share one groove: the page's header is a single
+        // band cut into the surface, not a title with controls floating beside it.
+        let band = theme::heading_band(ui);
+        theme::heading_in(ui, band, egui::Align2::LEFT_CENTER, "Library");
+        // Right to left, so the group sits at the far end; reversed, so the
+        // buttons still read in the order the focus walks them.
+        let mut header = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(band.shrink2(egui::vec2(ROW_PAD, 0.0)))
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        );
+        for (index, (glyph, hint, asked)) in HEADER.iter().enumerate().rev() {
+            let focused = focus.on_header && focus.header.is_focused(index);
+            let icon = egui::RichText::new(*glyph).size(ICON_SIZE);
+            let response = header.add(egui::Button::selectable(focused, icon));
 
-                    if response.hovered() {
-                        focus.point_at_header(index);
-                    }
+            if response.hovered() {
+                focus.point_at_header(index);
+            }
 
-                    if response.on_hover_text(*hint).clicked() {
-                        event = Some(*asked);
-                    }
-                }
-            });
-        });
+            if response.on_hover_text(*hint).clicked() {
+                event = Some(*asked);
+            }
+        }
         ui.add_space(MIN_GAP * 0.5);
         focus.sync(view.entries.len(), 1);
 

@@ -29,7 +29,12 @@ impl GlBackend {
     pub fn new(sdl: &Sdl, game_rect: Rect, config: &RenderConfig) -> Result<Self, String> {
         let gl = create_gl_with_fallback(sdl, game_rect.width(), game_rect.height())?;
         #[cfg(feature = "frontend-modern")]
-        let egui = egui_sdl2::EguiGlow::new(&gl.window, gl.glow.clone(), None, true);
+        let egui = {
+            let egui = egui_sdl2::EguiGlow::new(&gl.window, gl.glow.clone(), None, true);
+            ui::theme::apply(&egui.ctx, &ui::theme::OXIDE);
+
+            egui
+        };
 
         unsafe {
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);

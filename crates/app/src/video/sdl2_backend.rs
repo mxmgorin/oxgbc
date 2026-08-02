@@ -31,6 +31,13 @@ impl Sdl2Backend {
             .build()
             .unwrap();
         let mut canvas = window.into_canvas().build().unwrap();
+        #[cfg(feature = "frontend-modern")]
+        let egui = {
+            let egui = egui_sdl2::EguiCanvas::new(&canvas);
+            ui::theme::apply(&egui.ctx, &ui::theme::OXIDE);
+
+            egui
+        };
         let texture_creator = canvas.texture_creator();
         let mut game_texture = texture_creator
             .create_texture_streaming(
@@ -49,7 +56,7 @@ impl Sdl2Backend {
                 None
             },
             #[cfg(feature = "frontend-modern")]
-            egui: egui_sdl2::EguiCanvas::new(&canvas),
+            egui,
             video_subsystem,
             texture_creator,
             canvas,

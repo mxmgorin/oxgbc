@@ -13,6 +13,7 @@ mod overlay;
 pub mod rename;
 pub mod settings;
 pub mod states;
+pub mod theme;
 
 pub use browse::{BrowseEntry, BrowseTarget, BrowseView};
 pub use cart::CartKind;

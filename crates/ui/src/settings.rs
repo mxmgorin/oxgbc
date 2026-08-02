@@ -4,6 +4,7 @@
 
 use crate::menu::UiCmd;
 use crate::nav::GridFocus;
+use crate::theme::{self, ROW_PAD, SETTINGS_ROW_HEIGHT, WIDTH_PAGE};
 use egui::{Align, Layout, Ui};
 
 /// Identifies a row to the platform that produced it; opaque on this side.
@@ -34,9 +35,11 @@ pub enum Control {
     Action,
 }
 
-const ROW_HEIGHT: f32 = 26.0;
-const VALUE_WIDTH: f32 = 150.0;
-const PAGE_WIDTH: f32 = 460.0;
+/// Room kept for a stepper's value, wide enough for the longest one a row shows.
+const VALUE_WIDTH: f32 = theme::UNIT * 38.0;
+/// The whole control column: the value plus the two steppers around it. A row's
+/// label is cut at this, so a long one can never run under its own control.
+const CONTROL_WIDTH: f32 = VALUE_WIDTH + theme::UNIT * 20.0;
 
 /// Flattened row count, which is what the focus model moves through.
 pub fn row_count(view: &SettingsView) -> usize {
@@ -52,6 +55,7 @@ pub fn settings(root: &mut Ui, view: &SettingsView, focus: &mut GridFocus, out: 
     let follow_focus = focus.take_moved();
 
     egui::CentralPanel::default().show(root, |ui| {
+        theme::page(ui);
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
@@ -61,12 +65,12 @@ pub fn settings(root: &mut Ui, view: &SettingsView, focus: &mut GridFocus, out: 
                 // Centring by a leading `horizontal` instead would give the column a
                 // single row's height budget, and the page would stop scrolling.
                 ui.vertical_centered(|ui| {
-                    ui.set_max_width(PAGE_WIDTH);
-                    ui.heading("Settings");
+                    ui.set_max_width(WIDTH_PAGE);
+                    theme::heading(ui, "Settings");
                     let mut index = 0;
 
                     for section in &view.sections {
-                        ui.add_space(ROW_HEIGHT * 0.5);
+                        ui.add_space(SETTINGS_ROW_HEIGHT * 0.5);
                         ui.label(egui::RichText::new(&section.title).strong());
                         ui.separator();
 
@@ -90,7 +94,7 @@ fn show_row(
 ) {
     let focused = focus.is_focused(index);
     let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), ROW_HEIGHT),
+        egui::vec2(ui.available_width(), SETTINGS_ROW_HEIGHT),
         egui::Sense::hover(),
     );
 
@@ -98,25 +102,31 @@ fn show_row(
         focus.focus(index);
     }
 
-    if focused {
-        ui.painter()
-            .rect_filled(rect, 4.0, ui.visuals().selection.bg_fill);
+    let bloom = theme::paint_focus(ui, response.id, rect, focused);
 
-        // Directional input can walk the highlight off-screen; bring it back.
-        if follow_focus {
-            ui.scroll_to_rect(rect, Some(Align::Center));
-        }
+    // Directional input can walk the highlight off-screen; bring it back.
+    if focused && follow_focus {
+        ui.scroll_to_rect(rect, Some(Align::Center));
     }
 
-    let mut row_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(egui::vec2(8.0, 0.0)))
-            .layout(Layout::left_to_right(Align::Center)),
+    // The label is painted and the controls stay widgets, so the label's room has to
+    // be reserved rather than negotiated: it ends where the control column starts.
+    let mut label_rect = rect.shrink2(egui::vec2(ROW_PAD, 0.0));
+    label_rect.set_right((label_rect.right() - CONTROL_WIDTH).max(label_rect.left()));
+    theme::label(
+        ui,
+        label_rect,
+        egui::Align2::LEFT_CENTER,
+        &row.label,
+        theme::label_color(ui, bloom),
     );
-    row_ui.label(&row.label);
-    row_ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        show_control(ui, row, out)
-    });
+
+    let mut controls = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(egui::vec2(ROW_PAD, 0.0)))
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    show_control(&mut controls, row, out);
 }
 
 fn show_control(ui: &mut Ui, row: &Row, out: &mut Vec<UiCmd>) {

@@ -36,7 +36,9 @@ const LABEL_EDGE: Color32 = Color32::from_rgb(0xb9, 0xb4, 0xa8);
 const LABEL_TEXT: Color32 = Color32::from_rgb(0x26, 0x25, 0x21);
 const PINS: Color32 = Color32::from_rgb(0xc2, 0x9f, 0x3d);
 const SHADOW: Color32 = Color32::from_black_alpha(0x4d);
-const FOCUS: Color32 = Color32::from_rgb(0x7f, 0xc4, 0xff);
+/// The chrome's accent, so a focused cart and a focused row are the same colour —
+/// a ring rather than a fill only because a cart is not a rectangle.
+const FOCUS: Color32 = crate::theme::OXIDE.accent;
 
 /// Everything below is a fraction of the tile's width, measured off photos of the
 /// real carts, so the drawing scales with the shelf.

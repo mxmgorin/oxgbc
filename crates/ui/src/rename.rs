@@ -3,7 +3,8 @@
 //! egui, and so are unaffected by the text field holding the keyboard.
 
 use crate::nav::{FocusEvent, GridFocus, NavAction};
-use crate::overlay::{self, ROW_GAP, ROW_HEIGHT};
+use crate::overlay;
+use crate::theme::{self, ROW_GAP, ROW_HEIGHT, WIDTH_PANEL};
 use egui::{Ui, Vec2};
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -18,7 +19,6 @@ const ACTIONS: [(&str, RenameEvent); 2] = [
     ("Save", RenameEvent::Commit),
 ];
 
-const WIDTH: f32 = 380.0;
 /// Room for the heading and the hint under the buttons.
 const TITLE_HEIGHT: f32 = ROW_HEIGHT + ROW_GAP;
 
@@ -73,8 +73,8 @@ pub fn show(root: &mut Ui, title: &str, hint: &str, edit: &mut RenameEdit) -> Op
     let height = TITLE_HEIGHT * 2.0 + overlay::rows_height(ACTIONS.len());
     let mut event = None;
 
-    overlay::popup(root, Vec2::new(WIDTH, height), |ui| {
-        ui.heading(title);
+    overlay::popup(root, Vec2::new(WIDTH_PANEL, height), |ui| {
+        theme::heading(ui, title);
         let field = ui.add_sized(
             [ui.available_width(), ROW_HEIGHT],
             egui::TextEdit::singleline(&mut edit.text).hint_text(hint),
