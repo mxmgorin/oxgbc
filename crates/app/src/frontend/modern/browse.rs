@@ -2,8 +2,8 @@
 //! [`FileBrowser`]'s, shared with the text menu; this only starts it, turns it into
 //! a view and moves it a row at a time.
 
-use crate::file_browser::{FileBrowser, FILE_BROWSER_BACK_ITEM};
 use crate::frontend::BrowseTarget;
+use crate::storage::browser::{FileBrowser, FILE_BROWSER_BACK_ITEM};
 use std::path::{Path, PathBuf};
 
 /// A walk shows only what it can pick: games, or pictures, or nothing but folders.

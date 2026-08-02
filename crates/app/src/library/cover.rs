@@ -4,8 +4,8 @@
 //! ever needs: a scan at print resolution would otherwise be uploaded whole to
 //! draw a tile an inch wide.
 
-use crate::image_file::{self, RgbImage};
-use crate::rom_meta::RomMeta;
+use crate::library::meta::RomMeta;
+use crate::storage::image::{delete_file, RgbImage};
 use std::path::{Path, PathBuf};
 
 const COVER_EXT: &str = "png";
@@ -30,7 +30,7 @@ pub fn load(game: &str) -> Result<RgbImage, String> {
 
 /// A game with no cover is not an error — most have none.
 pub fn delete(game: &str) -> Result<(), String> {
-    image_file::delete_file(&path(game))
+    delete_file(&path(game))
 }
 
 /// Beside the game's metadata, so the two travel together.

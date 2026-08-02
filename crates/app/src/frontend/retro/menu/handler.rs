@@ -6,7 +6,7 @@ use super::factory::{
 use super::item::AppMenuItem;
 use crate::cmd::{AppCmd, BindTarget, ChangeConfigCmd};
 use crate::config::{update_frame_skip, AppConfig, ScaleMode, VideoBackendType};
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use crate::video::frame_blend::{
     AdditiveFrameBlend, ExponentialFrameBlend, FrameBlendMode, GammaCorrectedFrameBlend,
     LinearFrameBlend, DMG_PROFILE, POCKET_PROFILE,

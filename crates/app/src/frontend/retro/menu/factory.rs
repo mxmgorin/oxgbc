@@ -4,7 +4,7 @@ use super::roms::RomsMenu;
 use super::SubMenu;
 use crate::cmd::{AppCmd, BindCmds, BindTarget, ChangeConfigCmd};
 use crate::config::{InterfaceConfig, VideoBackendType, VideoConfig};
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use crate::video::frame_blend::FrameBlendMode;
 use crate::PlatformFileSystem;
 use core::auxiliary::joypad::JoypadButton;

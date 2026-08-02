@@ -5,8 +5,7 @@
 //! Boy frame packs into a few KB of PNG, so the list reads these instead.
 
 use crate::config::RenderConfig;
-use crate::image_file::{self, RgbImage};
-use crate::AppConfigFile;
+use crate::storage::image::{delete_file, RgbImage};
 use core::ppu::framebuffer::FrameBuffer;
 use std::path::PathBuf;
 
@@ -36,7 +35,7 @@ pub fn load(game: &str, suffix: &str) -> Result<RgbImage, String> {
 /// saved beside them: `Lcd::buffer` is serialized with the rest of the PPU, but
 /// only reachable behind a decode of the whole state.
 pub fn load_from_state(game: &str, suffix: &str) -> Result<RgbImage, String> {
-    let state = AppConfigFile::read_save_state_file(game, suffix)?;
+    let state = super::read_state(game, suffix)?;
 
     Ok(RgbImage {
         rgb: state.cpu.clock.bus.io.ppu.lcd.buffer.rgb888(),
@@ -48,10 +47,10 @@ pub fn load_from_state(game: &str, suffix: &str) -> Result<RgbImage, String> {
 /// A slot with no shot is not an error — every state written before shots existed
 /// is one.
 pub fn delete(game: &str, suffix: &str) -> Result<(), String> {
-    image_file::delete_file(&path(game, suffix))
+    delete_file(&path(game, suffix))
 }
 
 /// Derived from the state's own path, so the two can never land apart.
 pub fn path(game: &str, suffix: &str) -> PathBuf {
-    AppConfigFile::get_save_state_path(game, suffix).with_extension(SHOT_EXT)
+    super::state_path(game, suffix).with_extension(SHOT_EXT)
 }

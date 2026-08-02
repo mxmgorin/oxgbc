@@ -7,7 +7,7 @@ pub mod menu;
 use crate::cmd::AppCmd;
 use crate::frontend::{Capture, Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
 use core::ppu::framebuffer::FrameBuffer;

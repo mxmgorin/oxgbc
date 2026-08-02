@@ -1,7 +1,7 @@
 use super::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use crate::video::truncate_text;
 use crate::PlatformFileSystem;
 use std::path::PathBuf;

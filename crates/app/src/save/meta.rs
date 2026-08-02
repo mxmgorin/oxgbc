@@ -5,8 +5,7 @@
 //! emulator's business — and per slot rather than per game, so copying a slot's
 //! files somewhere else carries its name along.
 
-use crate::AppConfigFile;
-use core::cart::header::CartHeader;
+use crate::library::meta::CartId;
 use core::cart::Cart;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -33,33 +32,6 @@ pub struct StateMeta {
     /// Wall-clock seconds played by the time this state was written.
     #[serde(default)]
     pub playtime_secs: u64,
-}
-
-/// Enough of the cartridge to tell whether a state belongs to the loaded ROM.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct CartId {
-    #[serde(default)]
-    pub title: String,
-    #[serde(default)]
-    pub global_checksum: u16,
-}
-
-impl CartId {
-    pub fn of(cart: &Cart) -> Self {
-        Self {
-            title: cart.data.get_title(),
-            global_checksum: CartHeader::parse_global_checksum(cart.data.rom()),
-        }
-    }
-
-    /// From the header alone, for a ROM that is only being catalogued rather than
-    /// played. Both fields live inside [`CartHeader::END`].
-    pub fn of_header(header: &[u8]) -> Self {
-        Self {
-            title: CartHeader::parse_title(header),
-            global_checksum: CartHeader::parse_global_checksum(header),
-        }
-    }
 }
 
 impl StateMeta {
@@ -119,7 +91,7 @@ impl StateMeta {
 
     /// Derived from the state's own path, so the two can never land apart.
     pub fn path(game: &str, suffix: &str) -> PathBuf {
-        AppConfigFile::get_save_state_path(game, suffix).with_extension(META_EXT)
+        super::state_path(game, suffix).with_extension(META_EXT)
     }
 }
 
@@ -136,7 +108,7 @@ mod tests {
 
     #[test]
     fn the_sidecar_sits_beside_its_state() {
-        let state = AppConfigFile::get_save_state_path("Zelda.gb", "3");
+        let state = crate::save::state_path("Zelda.gb", "3");
         let meta = StateMeta::path("Zelda.gb", "3");
 
         assert_eq!(state.parent(), meta.parent());

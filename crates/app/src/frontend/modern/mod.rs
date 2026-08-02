@@ -8,12 +8,12 @@ mod states;
 
 use crate::cmd::{AppCmd, ChangeConfigCmd};
 use crate::config::{AppConfig, LibrarySort};
-use crate::file_browser::FileBrowser;
 use crate::frontend::{BrowseTarget, Capture, Frontend, FrontendCtx, NavAction};
 use crate::input::bindings::BindableInput;
-use crate::rom_cover;
-use crate::rom_meta::RomMeta;
-use crate::roms::RomsState;
+use crate::library::cover;
+use crate::library::meta::RomMeta;
+use crate::library::RomsState;
+use crate::storage::browser::FileBrowser;
 use crate::video::AppVideo;
 use crate::PlatformFileSystem;
 use core::cart::header::CgbFlag;
@@ -458,7 +458,7 @@ fn rom_meta(path: &Path) -> RomMeta {
 /// A few KB of PNG per cart, read while the shelf is built; most games have none.
 fn cover_of(path: &Path) -> Option<ui::RgbImage> {
     let name = path.file_name()?.to_string_lossy();
-    let cover = rom_cover::load(&name).ok()?;
+    let cover = cover::load(&name).ok()?;
 
     Some(ui::RgbImage {
         rgb: cover.rgb,

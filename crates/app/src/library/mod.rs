@@ -1,4 +1,11 @@
-use crate::{get_base_dir, PlatformFileSystem};
+//! The game collection: which ROMs the app knows about, and what it keeps beside
+//! each one — the user's name for it, its header facts, its cover.
+
+pub mod cover;
+pub mod meta;
+
+use crate::storage::get_base_dir;
+use crate::PlatformFileSystem;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

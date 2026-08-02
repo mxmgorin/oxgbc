@@ -11,6 +11,7 @@ use sdl2::rect::Rect;
 
 mod font;
 pub mod frame_blend;
+pub mod palette;
 mod sdl2_filters;
 pub mod text;
 mod video;

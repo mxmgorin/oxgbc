@@ -1,7 +1,7 @@
-use crate::get_base_dir;
 use crate::input::config::InputConfig;
-use crate::palette::LcdPalette;
+use crate::storage::get_base_dir;
 use crate::video::frame_blend::FrameBlendMode;
+use crate::video::palette::LcdPalette;
 use crate::video::shader::{ShaderFrameBlendMode, ShaderPrecision};
 use core::apu::apu::ApuConfig;
 use core::emu::config::{EmuConfig, GbModel};

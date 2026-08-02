@@ -11,7 +11,7 @@
 use crate::cmd::{AppCmd, BindCmds, BindComboCmd, BindInputCmd, BindTarget, ChangeConfigCmd};
 use crate::config::AppConfig;
 use crate::input::bindings::{BindableInput, InputBindings, InputKind};
-use crate::palette::LcdPalette;
+use crate::video::palette::LcdPalette;
 use core::apu::apu::CHANNELS_COUNT;
 use core::auxiliary::joypad::JoypadButton;
 use core::emu::config::GbModel;

@@ -4,10 +4,10 @@
 
 use crate::config::AppConfig;
 use crate::frontend::FrontendCtx;
-use crate::image_file::RgbImage;
-use crate::state_meta::StateMeta;
-use crate::state_shot;
-use crate::AppConfigFile;
+use crate::save;
+use crate::save::meta::StateMeta;
+use crate::save::shot;
+use crate::storage::image::RgbImage;
 use crate::PlatformFileSystem;
 use std::time::SystemTime;
 
@@ -62,7 +62,7 @@ pub fn view_for(name: &str, version: u64) -> ui::StatesView {
             played: played(meta.playtime_secs),
             // A few KB per slot, unlike the state itself; states written before
             // shots existed have none, and `load_shot` fills those in on demand.
-            shot: state_shot::load(name, &suffix).ok().map(into_ui_shot),
+            shot: shot::load(name, &suffix).ok().map(into_ui_shot),
         });
     }
 
@@ -82,7 +82,7 @@ pub fn load_shot<FS: PlatformFileSystem>(
 ) -> Option<ui::RgbImage> {
     let name = game_name(ctx)?;
 
-    match state_shot::load_from_state(&name, &slot.to_string()) {
+    match shot::load_from_state(&name, &slot.to_string()) {
         Ok(shot) => Some(into_ui_shot(shot)),
         Err(err) => {
             log::warn!("Failed load state shot: {err}");
@@ -107,7 +107,7 @@ fn game_name<FS: PlatformFileSystem>(ctx: &FrontendCtx<'_, FS>) -> Option<String
 
 /// `None` for a slot holding no state — a missing file *is* the empty slot.
 fn written_at(game: &str, slot: usize) -> Option<SystemTime> {
-    let path = AppConfigFile::get_save_state_path(game, &slot.to_string());
+    let path = save::state_path(game, &slot.to_string());
 
     path.metadata().ok()?.modified().ok()
 }

@@ -10,7 +10,7 @@ use self::item::AppMenuItem;
 use crate::cmd::{AppCmd, BindInputCmd};
 use crate::config::AppConfig;
 use crate::input::bindings::BindableInput;
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use std::mem;
 
 pub const MAX_MENU_ITEMS_PER_PAGE: usize = 12;

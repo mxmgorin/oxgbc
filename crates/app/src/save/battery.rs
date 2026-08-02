@@ -1,4 +1,4 @@
-use crate::get_base_dir;
+use crate::storage::get_base_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;

@@ -1,19 +1,18 @@
 use crate::audio::AppAudio;
-use crate::battery::BatterySave;
 use crate::config::{AppConfig, RenderConfig, VideoBackendType};
-
 use crate::frontend::{ActiveFrontend, Frontend, FrontendCtx};
 use crate::input::handler::InputHandler;
+use crate::library::cover;
+use crate::library::meta::{CartId, RomMeta};
+use crate::library::RomsState;
 use crate::notification::Notifications;
-use crate::palette::LcdPalette;
-use crate::rom_cover;
-use crate::rom_meta::RomMeta;
-use crate::roms::RomsState;
-use crate::state_meta::{CartId, StateMeta};
-use crate::state_shot;
+use crate::save::battery::BatterySave;
+use crate::save::meta::StateMeta;
+use crate::save::{self, shot};
+use crate::video::palette::LcdPalette;
 use crate::video::shader::{next_shader_by_name, prev_shader_by_name};
 use crate::video::AppVideo;
-use crate::{AppConfigFile, AppPlatform, PlatformFileDialog, PlatformFileSystem};
+use crate::{AppPlatform, PlatformFileDialog, PlatformFileSystem};
 use arrayvec::ArrayString;
 use core::cart::Cart;
 use core::emu::config::GbModel;
@@ -400,7 +399,7 @@ where
                 let save_state = emu.create_save_state();
                 let index = index.unwrap_or(self.config.current_save_slot).to_string();
 
-                if let Err(err) = AppConfigFile::write_save_state_file(&save_state, &name, &index) {
+                if let Err(err) = save::write_state(&save_state, &name, &index) {
                     log::error!("Failed save_state: {err}");
                     return;
                 }
@@ -419,7 +418,7 @@ where
                     log::warn!("Failed save state meta: {err}");
                 }
 
-                let shot = state_shot::save(
+                let shot = shot::save(
                     &name,
                     &index,
                     emu.get_framebuffer(),
@@ -438,7 +437,7 @@ where
             }
             SaveStateCmd::Load => {
                 let index = index.unwrap_or(self.config.current_load_slot).to_string();
-                let save_state = AppConfigFile::read_save_state_file(&name, &index);
+                let save_state = save::read_state(&name, &index);
 
                 let Ok(save_state) = save_state else {
                     log::error!("Failed load save_state: {}", save_state.unwrap_err());
@@ -482,7 +481,7 @@ where
 
         let index = index.to_string();
 
-        if let Err(err) = AppConfigFile::delete_save_state_file(&name, &index) {
+        if let Err(err) = save::delete_state(&name, &index) {
             log::error!("Failed delete_state: {err}");
             return;
         }
@@ -491,7 +490,7 @@ where
             log::warn!("Failed delete state meta: {err}");
         }
 
-        if let Err(err) = state_shot::delete(&name, &index) {
+        if let Err(err) = shot::delete(&name, &index) {
             log::warn!("Failed delete state shot: {err}");
         }
 
@@ -560,10 +559,10 @@ where
             return;
         };
         let suffix = index.to_string();
-        let set = rom_cover::import(&game, &state_shot::path(&game, &suffix)).or_else(|_| {
-            let shot = state_shot::load_from_state(&game, &suffix)?;
+        let set = cover::import(&game, &shot::path(&game, &suffix)).or_else(|_| {
+            let shot = shot::load_from_state(&game, &suffix)?;
 
-            rom_cover::set(&game, &shot)
+            cover::set(&game, &shot)
         });
 
         if let Err(err) = set {
@@ -597,7 +596,7 @@ where
             return;
         };
 
-        if let Err(err) = rom_cover::delete(&game) {
+        if let Err(err) = cover::delete(&game) {
             log::error!("Failed remove_rom_cover: {err}");
             return;
         }
@@ -625,7 +624,7 @@ where
             return;
         };
 
-        if let Err(err) = rom_cover::import(&game, image) {
+        if let Err(err) = cover::import(&game, image) {
             log::error!("Failed use_rom_cover: {err}");
             self.notifications.add("Failed to read that image");
             return;
@@ -670,9 +669,7 @@ where
 
         if self.config.auto_save_state {
             let state = emu.create_save_state();
-            if let Err(err) =
-                AppConfigFile::write_save_state_file(&state, &name, AUTO_SAVE_STATE_SUFFIX)
-            {
+            if let Err(err) = save::write_state(&state, &name, AUTO_SAVE_STATE_SUFFIX) {
                 log::warn!("Failed save_state: {err}");
             }
         }
@@ -733,7 +730,7 @@ where
         if !is_reload && self.config.auto_save_state {
             let path = self.roms.get_last_path().unwrap();
             let name = self.platform.fs.get_file_name(path).unwrap();
-            let save_state = AppConfigFile::read_save_state_file(&name, AUTO_SAVE_STATE_SUFFIX);
+            let save_state = save::read_state(&name, AUTO_SAVE_STATE_SUFFIX);
 
             if let Ok(save_state) = save_state {
                 emu.load_save_state(save_state);

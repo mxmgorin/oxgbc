@@ -1,7 +1,7 @@
 use super::{get_menu_toggle, SubMenu, MAX_MENU_ITEM_CHARS};
 use crate::cmd::{AppCmd, BindCmds, BindTarget};
 use crate::config::AppConfig;
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use crate::video::truncate_text;
 use core::auxiliary::joypad::JoypadButton;
 

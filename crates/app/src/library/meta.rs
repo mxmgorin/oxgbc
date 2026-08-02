@@ -5,9 +5,9 @@
 //! collection often sits on a read-only or shared disk, and nothing of ours
 //! belongs in it. Keyed by file name, like every other save.
 
-use crate::get_base_dir;
-use crate::state_meta::CartId;
+use crate::storage::get_base_dir;
 use core::cart::header::{CartHeader, CgbFlag};
+use core::cart::Cart;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
@@ -16,6 +16,34 @@ use std::path::{Path, PathBuf};
 
 const LIBRARY_DIR: &str = "library";
 const META_EXT: &str = "json";
+
+/// Enough of the cartridge to tell one from another: which game a save state came
+/// off, and whether the ROM behind a sidecar is still the same game.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CartId {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub global_checksum: u16,
+}
+
+impl CartId {
+    pub fn of(cart: &Cart) -> Self {
+        Self {
+            title: cart.data.get_title(),
+            global_checksum: CartHeader::parse_global_checksum(cart.data.rom()),
+        }
+    }
+
+    /// From the header alone, for a ROM that is only being catalogued rather than
+    /// played. Both fields live inside [`CartHeader::END`].
+    pub fn of_header(header: &[u8]) -> Self {
+        Self {
+            title: CartHeader::parse_title(header),
+            global_checksum: CartHeader::parse_global_checksum(header),
+        }
+    }
+}
 
 /// Every field defaults, so a sidecar written by an older build still loads and
 /// new fields can be added without a migration.

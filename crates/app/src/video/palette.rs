@@ -1,4 +1,4 @@
-use crate::get_base_dir;
+use crate::storage::get_base_dir;
 use core::save_json_file;
 use serde::{Deserialize, Serialize};
 use std::io;

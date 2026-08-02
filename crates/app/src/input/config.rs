@@ -78,7 +78,7 @@ impl Default for InputConfig {
 
 mod bindings_file {
     use super::*;
-    use crate::get_base_dir;
+    use crate::storage::get_base_dir;
     use serde::{Deserializer, Serializer};
 
     const FILE: &str = "bindings.json";
