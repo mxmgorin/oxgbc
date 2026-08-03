@@ -133,7 +133,7 @@ where
         }
 
         self.frontend
-            .open(!emu.runtime.cpu.clock.bus.cart.is_empty());
+            .start(!emu.runtime.cpu.clock.bus.cart.is_empty());
 
         let mut tick = Instant::now();
 

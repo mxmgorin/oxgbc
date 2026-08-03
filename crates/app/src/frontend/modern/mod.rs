@@ -163,6 +163,10 @@ impl Frontend for ModernFrontend {
         self.menu.open(has_game);
     }
 
+    fn start(&mut self, has_game: bool) {
+        self.menu.start(has_game);
+    }
+
     fn take_cmd(&mut self) -> Option<AppCmd> {
         self.pending.pop_front()
     }

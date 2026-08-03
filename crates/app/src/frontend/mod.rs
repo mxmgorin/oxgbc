@@ -101,6 +101,12 @@ pub trait Frontend {
     /// over a running game or the app's home screen.
     fn open(&mut self, has_game: bool);
 
+    /// Called instead of [`Self::open`] once at startup, for a frontend whose first
+    /// screen of a session is not the one a mid-game menu comes up on.
+    fn start(&mut self, has_game: bool) {
+        self.open(has_game);
+    }
+
     /// Commands the last [`Self::render`] produced — pointer input has no other
     /// way out, since rendering can't return through the UI toolkit.
     fn take_cmd(&mut self) -> Option<AppCmd>;

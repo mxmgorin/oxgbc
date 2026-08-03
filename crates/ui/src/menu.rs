@@ -176,12 +176,28 @@ pub struct Menu {
 impl Menu {
     /// Entering with a game loaded pauses over it; otherwise the library is home.
     pub fn open(&mut self, has_game: bool) {
-        self.screen = if has_game {
+        let screen = if has_game {
             Screen::Pause
         } else {
             Screen::Library
         };
-        self.opener = self.screen;
+
+        self.enter(screen, has_game);
+    }
+
+    /// A session opens on the shelf, with the loaded game one Back away.
+    pub fn start(&mut self, has_game: bool) {
+        self.enter(Screen::Library, has_game);
+    }
+
+    fn enter(&mut self, screen: Screen, has_game: bool) {
+        self.screen = screen;
+        // A game to go back to is what makes the overlay reachable.
+        self.opener = if has_game {
+            Screen::Pause
+        } else {
+            Screen::Library
+        };
 
         // Closing the UI from a settings page leaves a trail nothing will pop, since
         // the settings open at their first page again.
@@ -926,6 +942,22 @@ mod tests {
         assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
         assert_eq!(menu.on_settings_page(), None);
         // Back out of the overlay the settings were opened from.
+        assert_eq!(
+            menu.nav(NavAction::Back, &views(&view)),
+            Some(UiCmd::Resume)
+        );
+    }
+
+    /// The remembered game is loaded at startup, but nothing has been played yet, so
+    /// the shelf comes up rather than a pause over it — and Back resumes.
+    #[test]
+    fn a_session_starts_on_the_shelf_over_the_loaded_game() {
+        let view = nested();
+        let mut menu = Menu::default();
+        menu.start(true);
+        menu.library.sync(0, 1);
+
+        assert_eq!(menu.screen, Screen::Library);
         assert_eq!(
             menu.nav(NavAction::Back, &views(&view)),
             Some(UiCmd::Resume)
