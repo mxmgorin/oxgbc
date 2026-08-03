@@ -80,7 +80,7 @@ impl GlBackend {
         if self
             .tiles_view
             .as_ref()
-            .is_some_and(|x| x.get_window_id() == id)
+            .is_some_and(|x| x.window_id() == id)
         {
             self.tiles_view = None;
 
@@ -353,7 +353,7 @@ impl GlBackend {
             gl::UseProgram(program);
         }
 
-        self.uniform_locations = get_uniform_locations(self.shader_program);
+        self.uniform_locations = read_uniform_locations(self.shader_program);
         self.uniform_locations.send_image();
         self.uniform_locations
             .send_frame_blend_mode(frame_blend_mode);
@@ -386,7 +386,7 @@ impl GlBackend {
     }
 }
 
-fn get_uniform_locations(program: u32) -> UniformLocations {
+fn read_uniform_locations(program: u32) -> UniformLocations {
     unsafe {
         UniformLocations {
             image: gl::GetUniformLocation(program, c"image".as_ptr() as *const _),

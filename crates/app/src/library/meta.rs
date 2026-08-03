@@ -5,7 +5,7 @@
 //! collection often sits on a read-only or shared disk, and nothing of ours
 //! belongs in it. Keyed by file name, like every other save.
 
-use crate::storage::get_base_dir;
+use crate::storage::base_dir;
 use core::cart::header::{CartHeader, CgbFlag};
 use core::cart::Cart;
 use serde::{Deserialize, Serialize};
@@ -114,7 +114,7 @@ impl RomMeta {
     }
 
     pub fn path(name: &str) -> PathBuf {
-        get_base_dir()
+        base_dir()
             .join(LIBRARY_DIR)
             .join(format!("{name}.{META_EXT}"))
     }

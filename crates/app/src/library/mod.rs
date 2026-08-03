@@ -4,7 +4,7 @@
 pub mod cover;
 pub mod meta;
 
-use crate::storage::get_base_dir;
+use crate::storage::base_dir;
 use crate::PlatformFileSystem;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ impl RomsState {
             if file.ends_with(".gb") || file.ends_with(".gbc") {
                 if can_split_paths {
                     let path = PathBuf::from(file);
-                    if let Some(name) = filesystem.get_file_name(&path) {
+                    if let Some(name) = filesystem.file_name(&path) {
                         self.loaded_rom_files.insert(name); // store just the name
                     }
                 } else {
@@ -84,12 +84,12 @@ impl RomsState {
         self.opened_rom_paths.shift_remove(path);
     }
 
-    pub fn get_last_path(&self) -> Option<&PathBuf> {
+    pub fn last_path(&self) -> Option<&PathBuf> {
         self.opened_rom_paths.iter().last()
     }
 
-    pub fn get_or_create(fs: &impl PlatformFileSystem) -> Self {
-        let path = Self::get_path();
+    pub fn load_or_create(fs: &impl PlatformFileSystem) -> Self {
+        let path = Self::path();
 
         let mut obj = if path.exists() {
             let res: Result<RomsState, _> = core::read_json_file(&path);
@@ -143,12 +143,12 @@ impl RomsState {
     }
 
     pub fn save_file(&self) {
-        if let Err(err) = core::save_json_file(RomsState::get_path(), self) {
+        if let Err(err) = core::save_json_file(RomsState::path(), self) {
             log::error!("Failed to save ROMs: {err}");
         }
     }
 
-    fn get_path() -> PathBuf {
-        get_base_dir().join("roms.json")
+    fn path() -> PathBuf {
+        base_dir().join("roms.json")
     }
 }

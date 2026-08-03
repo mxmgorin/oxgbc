@@ -5,7 +5,7 @@
 use crate::app::{App, AppState};
 use crate::config::AppConfig;
 use crate::input::handler::InputHandler;
-use crate::storage::get_base_dir;
+use crate::storage::base_dir;
 use crate::video::palette::LcdPalette;
 use core::apu::Apu;
 use core::auxiliary::io::Io;
@@ -45,7 +45,7 @@ where
     FS: PlatformFileSystem,
     FD: PlatformFileDialog,
 {
-    let base_dir = get_base_dir();
+    let base_dir = base_dir();
     log::info!("Using base_dir: {base_dir:?}");
 
     let config = AppConfig::load_or_create();
@@ -64,9 +64,9 @@ where
 }
 
 pub fn new_emu(config: &AppConfig, palettes: &[LcdPalette]) -> Emu {
-    let emu_config = config.get_emu_config();
-    let apu_config = config.audio.get_apu_config();
-    let colors = config.video.interface.get_palette_colors(palettes);
+    let emu_config = config.emu_config();
+    let apu_config = config.audio.apu_config();
+    let colors = config.video.interface.palette_colors(palettes);
 
     let lcd = Lcd::new(colors, core::emu::config::GbModel::default());
     let mut ppu = Ppu::new(lcd);

@@ -66,21 +66,13 @@ where
     /// Re-apply the DMG palette using the current config (preset colors or the
     /// GBC colorization). Call after the model or preset changes.
     pub(crate) fn refresh_dmg_palette(&self, emu: &mut Emu) {
-        let colors = self
-            .config
-            .video
-            .interface
-            .get_palette_colors(&self.palettes);
+        let colors = self.config.video.interface.palette_colors(&self.palettes);
         self.apply_dmg_palette(emu, colors);
     }
 
     pub fn update_palette(&mut self, emu: &mut Emu) {
         let palette = &self.palettes[self.config.video.interface.selected_palette_idx];
-        let colors = self
-            .config
-            .video
-            .interface
-            .get_palette_colors(&self.palettes);
+        let colors = self.config.video.interface.palette_colors(&self.palettes);
         self.video.overlay.text_color = colors[0];
         self.video.overlay.bg_color = colors[3];
         self.apply_dmg_palette(emu, colors);

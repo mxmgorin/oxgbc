@@ -1,4 +1,4 @@
-use super::{get_menu_toggle, SubMenu, MAX_MENU_ITEM_CHARS};
+use super::{menu_toggle, SubMenu, MAX_MENU_ITEM_CHARS};
 use crate::cmd::{AppCmd, BindCmds, BindTarget};
 use crate::config::AppConfig;
 use crate::library::RomsState;
@@ -79,7 +79,7 @@ pub enum AppMenuItem {
 }
 
 impl AppMenuItem {
-    pub fn get_items_mut(&mut self) -> Option<&mut Box<dyn SubMenu>> {
+    pub fn items_mut(&mut self) -> Option<&mut Box<dyn SubMenu>> {
         match self {
             AppMenuItem::Resume
             | AppMenuItem::Confirm(_)
@@ -151,7 +151,7 @@ impl AppMenuItem {
         }
     }
 
-    pub fn get_items(&self) -> Option<&Box<dyn SubMenu>> {
+    pub fn items(&self) -> Option<&Box<dyn SubMenu>> {
         match self {
             AppMenuItem::Resume
             | AppMenuItem::Confirm(_)
@@ -229,7 +229,7 @@ fn with_value(label: &str, value: impl std::fmt::Display) -> String {
 }
 
 fn with_toggle(label: &str, value: bool) -> String {
-    format!("{label}: {}", get_menu_toggle(value))
+    format!("{label}: {}", menu_toggle(value))
 }
 
 fn with_count(label: &str, value: usize) -> String {
@@ -261,7 +261,7 @@ impl AppMenuItem {
             AppMenuItem::TileWindow => with_toggle("Show Tiles", config.video.interface.show_tiles),
             AppMenuItem::SpinDuration => with_value(
                 "Spin Wait(µs)",
-                config.get_emu_config().spin_duration.as_micros(),
+                config.emu_config().spin_duration.as_micros(),
             ),
             AppMenuItem::SystemMenu => "System".to_string(),
             AppMenuItem::AutoSaveState => with_toggle("Auto Save State", config.auto_save_state),
@@ -291,16 +291,14 @@ impl AppMenuItem {
             ),
             AppMenuItem::CpuFrameBlendMode => with_value(
                 "CPU Frame Blend",
-                config.video.render.frame_blend_mode.get_name(),
+                config.video.render.frame_blend_mode.name(),
             ),
-            AppMenuItem::FrameBlendAlpha => with_value(
-                "Blend Alpha",
-                config.video.render.frame_blend_mode.get_alpha(),
-            ),
-            AppMenuItem::FrameBlendFade => with_value(
-                "Blend Fade",
-                config.video.render.frame_blend_mode.get_fade(),
-            ),
+            AppMenuItem::FrameBlendAlpha => {
+                with_value("Blend Alpha", config.video.render.frame_blend_mode.alpha())
+            }
+            AppMenuItem::FrameBlendFade => {
+                with_value("Blend Fade", config.video.render.frame_blend_mode.fade())
+            }
             AppMenuItem::FrameBlendDim => with_value("Blend Dim", config.video.render.blend_dim),
             AppMenuItem::VideoMenu => "Video".to_string(),
             AppMenuItem::FrameBlendProfile => with_value(
@@ -309,29 +307,17 @@ impl AppMenuItem {
                     .video
                     .render
                     .frame_blend_mode
-                    .get_profile()
+                    .profile()
                     .unwrap()
                     .name(),
             ),
             AppMenuItem::FrameBlendRise => with_value(
                 "Blend Rise",
-                config
-                    .video
-                    .render
-                    .frame_blend_mode
-                    .get_profile()
-                    .unwrap()
-                    .rise,
+                config.video.render.frame_blend_mode.profile().unwrap().rise,
             ),
             AppMenuItem::FrameBlendFall => with_value(
                 "Blend Fall",
-                config
-                    .video
-                    .render
-                    .frame_blend_mode
-                    .get_profile()
-                    .unwrap()
-                    .fall,
+                config.video.render.frame_blend_mode.profile().unwrap().fall,
             ),
             AppMenuItem::FrameBlendBleed => with_value(
                 "Blend Bleed",
@@ -339,7 +325,7 @@ impl AppMenuItem {
                     .video
                     .render
                     .frame_blend_mode
-                    .get_profile()
+                    .profile()
                     .unwrap()
                     .bleed,
             ),
@@ -385,13 +371,13 @@ impl AppMenuItem {
                     .collect::<Vec<_>>()
                     .join("+");
 
-                with_value(&name, config.input.bindings.keyboard.get_desc(&cmd))
+                with_value(&name, config.input.bindings.keyboard.desc(&cmd))
             }
             AppMenuItem::CmdsBinding(cmd) => {
                 format!(
                     "{}: {}",
                     cmd.pressed,
-                    config.input.bindings.keyboard.get_desc(&cmd.pressed)
+                    config.input.bindings.keyboard.desc(&cmd.pressed)
                 )
             }
             AppMenuItem::WaitInput(_) => "Press a key".to_string(),

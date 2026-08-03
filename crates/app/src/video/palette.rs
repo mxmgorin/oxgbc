@@ -1,4 +1,4 @@
-use crate::storage::get_base_dir;
+use crate::storage::base_dir;
 use core::save_json_file;
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -32,7 +32,7 @@ impl LcdPalette {
     }
 
     pub fn default_palettes_path() -> PathBuf {
-        get_base_dir().join("palettes.json")
+        base_dir().join("palettes.json")
     }
 
     pub fn default_palettes() -> Vec<LcdPalette> {

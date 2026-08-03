@@ -86,13 +86,9 @@ where
                 }
 
                 emu.load_save_state(save_state);
-                let colors = self
-                    .config
-                    .video
-                    .interface
-                    .get_palette_colors(&self.palettes);
+                let colors = self.config.video.interface.palette_colors(&self.palettes);
                 self.apply_dmg_palette(emu, colors);
-                emu.runtime.cpu.clock.bus.io.apu.config = self.config.audio.get_apu_config();
+                emu.runtime.cpu.clock.bus.io.apu.config = self.config.audio.apu_config();
 
                 let msg = format!("Loaded save state: {index}");
                 self.notifications.add(msg);

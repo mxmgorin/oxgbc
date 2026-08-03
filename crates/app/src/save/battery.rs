@@ -1,4 +1,4 @@
-use crate::storage::get_base_dir;
+use crate::storage::base_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
@@ -40,6 +40,6 @@ impl BatterySave {
     }
 
     pub fn generate_path(name: &str) -> PathBuf {
-        get_base_dir().join("saves").join(format!("{name}.sav"))
+        base_dir().join("saves").join(format!("{name}.sav"))
     }
 }

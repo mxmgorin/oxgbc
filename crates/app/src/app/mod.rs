@@ -87,7 +87,7 @@ where
         palettes: Box<[LcdPalette]>,
         platform: AppPlatform<FS, FD>,
     ) -> Result<Self, String> {
-        let colors = config.video.interface.get_palette_colors(&palettes);
+        let colors = config.video.interface.palette_colors(&palettes);
         let mut notifications = Notifications::new(Duration::from_secs(3));
 
         let video = AppVideo::new(sdl, colors[0], colors[3], &config.video);
@@ -107,7 +107,7 @@ where
                 }
             }
         };
-        let roms = RomsState::get_or_create(&platform.fs);
+        let roms = RomsState::load_or_create(&platform.fs);
 
         Ok(Self {
             audio: AppAudio::new(sdl, &config.audio),
@@ -167,7 +167,7 @@ where
     }
 
     pub fn restart_rom(&mut self, emu: &mut Emu) {
-        if let Some(cart_path) = self.roms.get_last_path() {
+        if let Some(cart_path) = self.roms.last_path() {
             if let Err(err) = self.load_cart_file(emu, &cart_path.to_path_buf()) {
                 log::warn!("Failed to load cart file: {err}");
             }
@@ -194,8 +194,8 @@ where
     /// File name of the loaded ROM, which is what every save beside it goes by.
     pub(super) fn game_name(&self) -> Option<String> {
         self.roms
-            .get_last_path()
-            .and_then(|path| self.platform.fs.get_file_name(path))
+            .last_path()
+            .and_then(|path| self.platform.fs.file_name(path))
     }
 
     pub fn save_files(&mut self, emu: &mut Emu) -> Result<(), String> {
@@ -207,17 +207,17 @@ where
             log::warn!("Failed config.save: {err}");
         }
 
-        let roms = RomsState::get_or_create(&self.platform.fs);
-        let path = roms.get_last_path();
+        let roms = RomsState::load_or_create(&self.platform.fs);
+        let path = roms.last_path();
 
         let Some(path) = path else {
             return Ok(());
         };
 
-        let name = self.platform.fs.get_file_name(path);
+        let name = self.platform.fs.file_name(path);
 
         let Some(name) = name else {
-            return Err("Failed filesystem.get_file_name: not found".to_string());
+            return Err("Failed filesystem.file_name: not found".to_string());
         };
 
         // save sram for battery emulation
@@ -242,14 +242,14 @@ where
     }
 
     pub fn load_cart_file(&mut self, emu: &mut Emu, path: &Path) -> Result<(), String> {
-        let is_reload = self.roms.get_last_path().map(|x| x.as_path()) == Some(path)
+        let is_reload = self.roms.last_path().map(|x| x.as_path()) == Some(path)
             && !emu.runtime.cpu.clock.bus.cart.is_empty();
 
         let file_name = self
             .platform
             .fs
-            .get_file_name(path)
-            .ok_or("filesystem.get_file_name: None")?;
+            .file_name(path)
+            .ok_or("filesystem.file_name: None")?;
         let ram_bytes = BatterySave::load_file(&file_name).ok().map(|x| x.ram_bytes);
         let mut file_bytes = self
             .platform
@@ -271,11 +271,7 @@ where
         emu.load_cart(cart);
         self.roms.insert_or_update(path.to_path_buf());
 
-        let colors = self
-            .config
-            .video
-            .interface
-            .get_palette_colors(&self.palettes);
+        let colors = self.config.video.interface.palette_colors(&self.palettes);
         self.apply_dmg_palette(emu, colors);
         emu.runtime
             .cpu
@@ -285,13 +281,13 @@ where
             .ppu
             .toggle_fps(self.config.video.interface.show_fps);
 
-        emu.runtime.cpu.clock.bus.io.apu.config = self.config.audio.get_apu_config();
+        emu.runtime.cpu.clock.bus.io.apu.config = self.config.audio.apu_config();
         self.state = AppState::Running;
         self.frontend = ActiveFrontend::new(&self.roms);
 
         if !is_reload && self.config.auto_save_state {
-            let path = self.roms.get_last_path().unwrap();
-            let name = self.platform.fs.get_file_name(path).unwrap();
+            let path = self.roms.last_path().unwrap();
+            let name = self.platform.fs.file_name(path).unwrap();
             let save_state = save::read_state(&name, AUTO_SAVE_STATE_SUFFIX);
 
             if let Ok(save_state) = save_state {

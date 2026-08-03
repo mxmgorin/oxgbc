@@ -58,7 +58,7 @@ impl AppMenu {
         self.updated = true;
     }
 
-    pub fn get_items(&mut self, config: &AppConfig, roms: &RomsState) -> (&[&str], bool) {
+    pub fn items(&mut self, config: &AppConfig, roms: &RomsState) -> (&[&str], bool) {
         let updated = self.updated;
         self.updated = false;
 
@@ -67,8 +67,8 @@ impl AppMenu {
             self.sub_buffer.clear();
 
             for (i, item) in self.items.iter_mut().enumerate() {
-                if let Some(sub_items) = item.get_items() {
-                    for sub_item in sub_items.get_iterator() {
+                if let Some(sub_items) = item.items() {
+                    for sub_item in sub_items.iter() {
                         self.sub_buffer.add(sub_item);
                     }
 
@@ -97,7 +97,7 @@ impl AppMenu {
     }
 }
 
-pub fn get_menu_toggle(enabled: bool) -> &'static str {
+pub fn menu_toggle(enabled: bool) -> &'static str {
     if enabled {
         "●"
     } else {
@@ -106,7 +106,7 @@ pub fn get_menu_toggle(enabled: bool) -> &'static str {
 }
 
 pub trait SubMenu {
-    fn get_iterator(&self) -> Box<dyn Iterator<Item = String> + '_>;
+    fn iter(&self) -> Box<dyn Iterator<Item = String> + '_>;
     fn move_up(&mut self);
     fn move_down(&mut self);
     fn move_left(&mut self) -> Option<AppCmd>;

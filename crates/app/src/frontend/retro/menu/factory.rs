@@ -129,7 +129,7 @@ pub fn advanced_menu() -> Box<[AppMenuItem]> {
 pub fn start_menu(roms: &RomsState) -> Box<[AppMenuItem]> {
     let mut items = Vec::with_capacity(10);
 
-    if roms.get_last_path().is_some() {
+    if roms.last_path().is_some() {
         items.push(AppMenuItem::Resume);
         items.push(AppMenuItem::SaveState);
         items.push(AppMenuItem::LoadState);

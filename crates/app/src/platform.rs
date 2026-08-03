@@ -18,7 +18,7 @@ pub trait PlatformFileDialog {
 }
 
 pub trait PlatformFileSystem {
-    fn get_file_name(&self, path: &Path) -> Option<String>;
+    fn file_name(&self, path: &Path) -> Option<String>;
     fn read_file_bytes(&self, path: &Path) -> Option<Box<[u8]>>;
     fn read_dir(&self, path: &Path) -> Result<Vec<String>, String>;
     fn can_split_paths(&self) -> bool;

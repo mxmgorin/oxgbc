@@ -16,8 +16,8 @@ where
 {
     /// Touches only the library sidecar — the ROM file itself is never written to.
     pub fn handle_rename_rom(&mut self, path: &Path, name: String) {
-        let Some(game) = self.platform.fs.get_file_name(path) else {
-            log::error!("Failed rename_rom: filesystem.get_file_name: None");
+        let Some(game) = self.platform.fs.file_name(path) else {
+            log::error!("Failed rename_rom: filesystem.file_name: None");
             return;
         };
 
@@ -43,8 +43,8 @@ where
     /// resizes anything. A state older than those files still has its screen inside
     /// it, at the price of decoding the whole state.
     pub fn handle_cover_from_state(&mut self, rom: &Path, index: usize) {
-        let Some(game) = self.platform.fs.get_file_name(rom) else {
-            log::error!("Failed cover_from_state: filesystem.get_file_name: None");
+        let Some(game) = self.platform.fs.file_name(rom) else {
+            log::error!("Failed cover_from_state: filesystem.file_name: None");
             return;
         };
         let suffix = index.to_string();
@@ -80,8 +80,8 @@ where
     }
 
     pub fn handle_remove_rom_cover(&mut self, rom: &Path) {
-        let Some(game) = self.platform.fs.get_file_name(rom) else {
-            log::error!("Failed remove_rom_cover: filesystem.get_file_name: None");
+        let Some(game) = self.platform.fs.file_name(rom) else {
+            log::error!("Failed remove_rom_cover: filesystem.file_name: None");
             return;
         };
 
@@ -108,8 +108,8 @@ where
     }
 
     pub fn use_rom_cover(&mut self, rom: &Path, image: &Path) {
-        let Some(game) = self.platform.fs.get_file_name(rom) else {
-            log::error!("Failed use_rom_cover: filesystem.get_file_name: None");
+        let Some(game) = self.platform.fs.file_name(rom) else {
+            log::error!("Failed use_rom_cover: filesystem.file_name: None");
             return;
         };
 

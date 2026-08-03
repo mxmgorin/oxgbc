@@ -95,7 +95,7 @@ fn bound_to<I: BindableInput>(bindings: &InputBindings<I>, pressed: &AppCmd) -> 
     // Only the press half: the release is bound to the same input and would list
     // every name twice.
     let names: Vec<&str> = bindings
-        .get_inputs(pressed)
+        .inputs(pressed)
         .into_iter()
         .filter(|(_, pressed)| *pressed)
         .map(|(input, _)| input.name())

@@ -8,7 +8,7 @@ pub mod battery;
 pub mod meta;
 pub mod shot;
 
-use crate::storage::get_base_dir;
+use crate::storage::base_dir;
 use core::emu::state::EmuSaveState;
 use std::fs;
 use std::fs::File;
@@ -47,7 +47,7 @@ pub fn delete_state(name: &str, suffix: &str) -> Result<(), String> {
 /// The state file itself; [`meta`] and [`shot`] derive their own paths from this
 /// one, so a slot's three files always sit together.
 pub fn state_path(game_name: &str, suffix: &str) -> PathBuf {
-    get_base_dir()
+    base_dir()
         .join("save_states")
         .join(format!("{game_name}_{suffix}.state"))
 }

@@ -70,15 +70,15 @@ pub struct InputBindings<K: BindableInput> {
 
 impl<I: BindableInput> InputBindings<I> {
     #[inline(always)]
-    pub fn get_cmd(&self, input: I, pressed: bool) -> Option<&AppCmd> {
+    pub fn cmd(&self, input: I, pressed: bool) -> Option<&AppCmd> {
         self.cmds
             .get(InputIndex::new(input, pressed).index())
             .and_then(|x| x.as_ref())
     }
 
-    pub fn get_desc(&self, cmd: &AppCmd) -> String {
+    pub fn desc(&self, cmd: &AppCmd) -> String {
         let desc = self
-            .get_inputs(cmd)
+            .inputs(cmd)
             .into_iter()
             .map(|(i, _)| i.name())
             .collect::<Vec<_>>()
@@ -91,7 +91,7 @@ impl<I: BindableInput> InputBindings<I> {
         }
     }
 
-    pub fn get_inputs(&self, cmd: &AppCmd) -> Vec<(I, bool)> {
+    pub fn inputs(&self, cmd: &AppCmd) -> Vec<(I, bool)> {
         let mut inputs = Vec::with_capacity(2);
 
         for (i, item) in self.cmds.iter().enumerate() {

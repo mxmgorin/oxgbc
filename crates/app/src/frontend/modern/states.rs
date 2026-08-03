@@ -100,9 +100,7 @@ fn into_ui_shot(shot: RgbImage) -> ui::RgbImage {
 }
 
 fn game_name<FS: PlatformFileSystem>(ctx: &FrontendCtx<'_, FS>) -> Option<String> {
-    ctx.roms
-        .get_last_path()
-        .and_then(|path| ctx.fs.get_file_name(path))
+    ctx.roms.last_path().and_then(|path| ctx.fs.file_name(path))
 }
 
 /// `None` for a slot holding no state — a missing file *is* the empty slot.

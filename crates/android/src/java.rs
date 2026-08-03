@@ -60,7 +60,7 @@ pub fn read_uri_bytes(uri: &str) -> Option<Vec<u8>> {
     .ok()
 }
 
-pub fn get_file_name(uri: &str) -> Option<String> {
+pub fn file_name(uri: &str) -> Option<String> {
     let vm = JVM.get()?;
     vm.attach_current_thread(|env| -> jni::errors::Result<Option<String>> {
         let class = env.find_class(CLASS_NAME)?;

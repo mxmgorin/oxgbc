@@ -1,5 +1,5 @@
 use crate::video::draw_color;
-use crate::video::font::get_char_bitmap;
+use crate::video::font::char_bitmap;
 use core::ppu::framebuffer::FrameBuffer;
 use core::ppu::tile::PixelColor;
 
@@ -70,7 +70,7 @@ pub fn fill_line(
     let spacing = size.spacing();
 
     for c in line.chars() {
-        let bitmap = get_char_bitmap(c, size);
+        let bitmap = char_bitmap(c, size);
 
         for (row, pixel) in bitmap.iter().enumerate() {
             for col in 0..width {

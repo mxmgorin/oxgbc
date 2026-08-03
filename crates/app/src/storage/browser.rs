@@ -129,17 +129,17 @@ impl FileBrowser {
         }
     }
 
-    pub fn get_entries(&self) -> &[PathBuf] {
+    pub fn entries(&self) -> &[PathBuf] {
         &self.entries
     }
 
-    pub fn get_page_entries(&self) -> &[PathBuf] {
+    pub fn page_entries(&self) -> &[PathBuf] {
         let page_start = (self.selected_index / self.page_size) * self.page_size;
         let page_end = usize::min(page_start + self.page_size, self.entries.len());
         &self.entries[page_start..page_end]
     }
 
-    pub fn get_selected(&self) -> Option<&PathBuf> {
+    pub fn selected(&self) -> Option<&PathBuf> {
         self.entries.get(self.selected_index)
     }
 

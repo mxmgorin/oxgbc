@@ -529,15 +529,15 @@ mod tests {
         bind_to(&mut bindings, Scancode::W, buttons(JoypadButton::Up));
 
         assert_eq!(
-            bindings.get_cmd(Scancode::W, true),
+            bindings.cmd(Scancode::W, true),
             Some(&AppCmd::PressButton(JoypadButton::Up))
         );
         assert_eq!(
-            bindings.get_cmd(Scancode::W, false),
+            bindings.cmd(Scancode::W, false),
             Some(&AppCmd::ReleaseButton(JoypadButton::Up))
         );
-        assert_eq!(bindings.get_cmd(Scancode::Up, true), None, "the old key");
-        assert_eq!(bindings.get_cmd(Scancode::Up, false), None);
+        assert_eq!(bindings.cmd(Scancode::Up, true), None, "the old key");
+        assert_eq!(bindings.cmd(Scancode::Up, false), None);
     }
 
     /// The other direction: whatever the captured input used to do, it stops doing.
@@ -552,13 +552,10 @@ mod tests {
             BindTarget::Cmds(crate::cmd::BindCmds::new(AppCmd::ToggleMenu, None)),
         );
 
-        assert_eq!(
-            bindings.get_cmd(Scancode::X, true),
-            Some(&AppCmd::ToggleMenu)
-        );
+        assert_eq!(bindings.cmd(Scancode::X, true), Some(&AppCmd::ToggleMenu));
         // A target with no release command must leave the release slot empty, or the
         // key would still be letting go of A.
-        assert_eq!(bindings.get_cmd(Scancode::X, false), None);
+        assert_eq!(bindings.cmd(Scancode::X, false), None);
     }
 
     /// A diagonal is a macro, and a macro is a different command from the plain
@@ -575,10 +572,10 @@ mod tests {
         );
 
         assert_eq!(
-            bindings.get_cmd(Scancode::Up, true),
+            bindings.cmd(Scancode::Up, true),
             Some(&AppCmd::PressButton(JoypadButton::Up)),
             "the plain button is untouched"
         );
-        assert!(bindings.get_cmd(Scancode::Y, true).is_some());
+        assert!(bindings.cmd(Scancode::Y, true).is_some());
     }
 }

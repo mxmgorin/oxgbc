@@ -91,7 +91,7 @@ impl Frontend for RetroFrontend {
         fb: &mut FrameBuffer,
         ctx: FrontendCtx<'_, FS>,
     ) {
-        let (items, updated) = self.menu.get_items(ctx.config, ctx.roms);
+        let (items, updated) = self.menu.items(ctx.config, ctx.roms);
 
         if updated {
             video.overlay.fill_menu(fb, items, true, true);

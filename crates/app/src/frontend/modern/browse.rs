@@ -40,7 +40,7 @@ pub fn view(walk: Option<&FileBrowser>, target: &BrowseTarget) -> ui::BrowseView
         return ui::BrowseView::default();
     };
     let entries = walk
-        .get_entries()
+        .entries()
         .iter()
         // The walk leads with a sentinel for the way up, which is a row like any
         // other here — entering it goes up.

@@ -245,7 +245,7 @@ impl ModernFrontend {
 
         self.load_library(ctx);
         self.views.settings = settings::view(ctx.config, ctx.palettes, self.capturing);
-        self.loaded = ctx.roms.get_last_path().cloned();
+        self.loaded = ctx.roms.last_path().cloned();
         self.views.version += 1;
         self.views.states = states::view(ctx, self.views.version);
         // The rebuilt views dropped the screens read into them.

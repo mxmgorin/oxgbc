@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 /// The one directory the app writes into: config, palettes, save states, the
 /// library's sidecars. Everything else derives its path from here.
-pub fn get_base_dir() -> PathBuf {
+pub fn base_dir() -> PathBuf {
     let path = sdl2::filesystem::pref_path("mxmgorin", "oxGBC").unwrap();
 
     PathBuf::from(path)

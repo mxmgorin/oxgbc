@@ -1,5 +1,5 @@
 use crate::input::config::InputConfig;
-use crate::storage::get_base_dir;
+use crate::storage::base_dir;
 use crate::video::frame_blend::FrameBlendMode;
 use crate::video::palette::LcdPalette;
 use crate::video::shader::{ShaderFrameBlendMode, ShaderPrecision};
@@ -115,7 +115,7 @@ pub fn update_frame_skip(v: usize, delta: isize) -> usize {
 }
 
 impl AppConfig {
-    pub fn get_emu_config(&self) -> &EmuConfig {
+    pub fn emu_config(&self) -> &EmuConfig {
         &self.emulation
     }
 
@@ -169,7 +169,7 @@ fn default_latency_ms() -> u32 {
 }
 
 impl AudioConfig {
-    pub fn get_apu_config(&self) -> ApuConfig {
+    pub fn apu_config(&self) -> ApuConfig {
         let mut config = ApuConfig::new(self.buffer_size, self.volume);
         config.channel_mask = self.channel_mask;
 
@@ -206,7 +206,7 @@ pub struct InterfaceConfig {
 }
 
 impl InterfaceConfig {
-    pub fn get_palette_colors(&self, palettes: &[LcdPalette]) -> [PixelColor; 4] {
+    pub fn palette_colors(&self, palettes: &[LcdPalette]) -> [PixelColor; 4] {
         let idx = self.selected_palette_idx;
 
         let mut colors = core::into_pixel_colors(&palettes[idx].hex_colors);
@@ -274,7 +274,7 @@ impl AppConfig {
     }
 
     pub fn default_path() -> PathBuf {
-        get_base_dir().join("config.json")
+        base_dir().join("config.json")
     }
 }
 

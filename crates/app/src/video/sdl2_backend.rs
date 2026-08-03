@@ -78,7 +78,7 @@ impl Sdl2Backend {
     /// Closes the window and returns true when main window is closed.
     pub fn close_window(&mut self, id: u32) -> bool {
         if let Some(tiles) = self.tiles_view.as_mut() {
-            if tiles.get_window_id() == id {
+            if tiles.window_id() == id {
                 self.tiles_view = None;
                 return false;
             }

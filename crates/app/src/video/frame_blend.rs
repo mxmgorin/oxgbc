@@ -281,7 +281,7 @@ impl Default for ExponentialFrameBlend {
 }
 
 impl FrameBlendMode {
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             FrameBlendMode::Linear(_) => "Linear",
             FrameBlendMode::Additive(_) => "Additive",
@@ -324,7 +324,7 @@ impl FrameBlendMode {
         }
     }
 
-    pub fn get_alpha(&self) -> f32 {
+    pub fn alpha(&self) -> f32 {
         match self {
             FrameBlendMode::None => 0.0,
             FrameBlendMode::Linear(x) => x.alpha,
@@ -335,7 +335,7 @@ impl FrameBlendMode {
         }
     }
 
-    pub fn get_fade(&self) -> f32 {
+    pub fn fade(&self) -> f32 {
         match self {
             FrameBlendMode::None => 0.0,
             FrameBlendMode::Linear(_) => 0.0,
@@ -346,7 +346,7 @@ impl FrameBlendMode {
         }
     }
 
-    pub fn get_profile(&self) -> Option<&BlendProfile> {
+    pub fn profile(&self) -> Option<&BlendProfile> {
         match self {
             FrameBlendMode::None
             | FrameBlendMode::Linear(_)

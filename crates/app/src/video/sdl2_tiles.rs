@@ -41,7 +41,7 @@ impl Sdl2TilesView {
         }
     }
 
-    pub fn get_window_id(&self) -> u32 {
+    pub fn window_id(&self) -> u32 {
         self.canvas.window().id()
     }
 
