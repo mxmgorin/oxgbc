@@ -15,7 +15,7 @@ use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
 use crate::settings::{row_at, settings, Control, PageId, SettingId, SettingsView, ROOT_PAGE};
 use crate::states::{self, RowPick, StatesView};
-use crate::theme::WIDTH_SHEET;
+use crate::theme::{self, WIDTH_SHEET};
 use egui::Vec2;
 
 /// A request only the platform can carry out. Not `Copy`: a rename carries the
@@ -69,6 +69,8 @@ pub enum UiCmd {
 /// another argument through both entry points.
 pub struct Views<'a> {
     pub library: LibraryView<'a>,
+    /// What the shelf calls the loaded game, which the pause overlay is titled by.
+    pub playing: &'a str,
     pub settings: &'a SettingsView,
     pub states: &'a StatesView,
     /// Where the storage walk is, empty unless one is open.
@@ -658,7 +660,7 @@ impl Menu {
                     out.extend(self.library_event(event, views));
                 }
             }
-            Screen::Pause => self.pause_overlay(root, out),
+            Screen::Pause => self.pause_overlay(root, views, out),
             Screen::Settings(page) => {
                 if let Some(url) = self.open_url.take() {
                     root.ctx().open_url(egui::OpenUrl::new_tab(url));
@@ -800,13 +802,17 @@ impl Menu {
         self.settings_trail.len()
     }
 
-    fn pause_overlay(&mut self, root: &mut egui::Ui, out: &mut Vec<UiCmd>) {
+    /// Titled by the game it is paused over, the way a console names what it has
+    /// suspended; the app's own name is on the shelf and the About page.
+    fn pause_overlay(&mut self, root: &mut egui::Ui, views: &Views<'_>, out: &mut Vec<UiCmd>) {
         self.pause.sync(PAUSE_ITEMS.len(), 1);
-        let size = Vec2::new(WIDTH_SHEET, overlay::rows_height(PAUSE_ITEMS.len()));
+        let height = overlay::title_height() + overlay::rows_height(PAUSE_ITEMS.len());
+        let size = Vec2::new(WIDTH_SHEET, height);
         let pause = &mut self.pause;
         let mut clicked = None;
 
         overlay::popup(root, size, |ui| {
+            theme::heading(ui, views.playing);
             clicked = overlay::rows(ui, PAUSE_ITEMS.iter().map(|(label, _)| *label), pause);
         });
 
@@ -870,6 +876,7 @@ mod tests {
                 version: 0,
                 sort: SortBy::default(),
             },
+            playing: "",
             settings,
             states: &EMPTY_STATES,
             rom_states: &EMPTY_STATES,

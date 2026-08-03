@@ -67,6 +67,8 @@ struct ViewData {
     rom_states: ui::StatesView,
     /// Where the storage walk is, empty unless one is open.
     browse: ui::BrowseView,
+    /// What the loaded game is called, empty with none loaded.
+    playing: String,
     /// Bumped for every rebuild, so the UI can tell one view from the next.
     version: u64,
 }
@@ -81,6 +83,7 @@ impl ViewData {
                 version: self.version,
                 sort,
             },
+            playing: &self.playing,
             settings: &self.settings,
             states: &self.states,
             rom_states: &self.rom_states,
@@ -250,6 +253,13 @@ impl ModernFrontend {
         self.load_library(ctx);
         self.views.settings = settings::view(ctx.config, ctx.palettes, self.capturing);
         self.loaded = ctx.roms.last_path().cloned();
+        // The shelf's own name for it, sidecar and all, so the pause overlay and the
+        // cart agree on what the game is called.
+        self.views.playing = self
+            .loaded
+            .as_deref()
+            .map(|path| title_of(path, &rom_meta(path)))
+            .unwrap_or_default();
         self.views.version += 1;
         self.views.states = states::view(ctx, self.views.version);
         // The rebuilt views dropped the screens read into them.

@@ -295,10 +295,12 @@ pub fn heading(ui: &mut Ui, text: impl ToString) {
 }
 
 /// The title of a band the caller has already cut, for a header sharing one with
-/// buttons on its far end.
-pub fn heading_in(ui: &Ui, band: Rect, anchor: Align2, text: impl ToString) {
+/// buttons on its far end. Returns the width it took, so a header can set something
+/// beside its title.
+pub fn heading_in(ui: &Ui, band: Rect, anchor: Align2, text: impl ToString) -> f32 {
     let font = TextStyle::Heading.resolve(ui.style());
     let color = ui.visuals().text_color();
+
     label_with(
         ui,
         band.shrink2(Vec2::new(ROW_PAD, 0.0)),
@@ -306,7 +308,14 @@ pub fn heading_in(ui: &Ui, band: Rect, anchor: Align2, text: impl ToString) {
         text,
         font,
         color,
-    );
+    )
+}
+
+/// Small print in a row's second-line tone, for text set beside a heading.
+pub fn detail(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString) {
+    let font = TextStyle::Small.resolve(ui.style());
+
+    label_with(ui, rect, anchor, text, font, detail_color(ui, 0.0));
 }
 
 /// The band on its own, for a header carrying more than its title.
