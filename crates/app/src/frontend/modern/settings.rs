@@ -9,9 +9,14 @@
 //! unambiguous — and keeps the settings from opening on a wall of bindings.
 
 use crate::cmd::{AppCmd, BindCmds, BindComboCmd, BindInputCmd, BindTarget, ChangeConfigCmd};
-use crate::config::AppConfig;
+use crate::config::{AppConfig, RenderConfig, ScaleMode, VideoBackendType, VideoConfig};
 use crate::input::bindings::{BindableInput, InputBindings, InputKind};
+use crate::video::frame_blend::{
+    AdditiveFrameBlend, BlendProfile, ExponentialFrameBlend, FrameBlendMode,
+    GammaCorrectedFrameBlend, LinearFrameBlend, DMG_PROFILE, POCKET_PROFILE,
+};
 use crate::video::palette::LcdPalette;
+use crate::video::shader::ShaderFrameBlendMode;
 use core::apu::apu::CHANNELS_COUNT;
 use core::auxiliary::joypad::JoypadButton;
 use core::emu::config::GbModel;
@@ -47,6 +52,25 @@ const ROMS_DIR: SettingId = 23;
 const KEYBOARD: SettingId = 24;
 const GAMEPAD: SettingId = 25;
 const CHANNEL: SettingId = 26;
+/// The video rows, clear of `CHANNEL`'s per-channel block.
+const VIDEO: SettingId = 32;
+const SCALE_MODE: SettingId = 33;
+const BACKEND: SettingId = 34;
+const BLEND_MODE: SettingId = 35;
+const BLEND_ALPHA: SettingId = 36;
+const BLEND_FADE: SettingId = 37;
+const BLEND_DIM: SettingId = 38;
+const BLEND_PROFILE: SettingId = 39;
+const BLEND_RISE: SettingId = 40;
+const BLEND_FALL: SettingId = 41;
+const BLEND_BLEED: SettingId = 42;
+const GRID: SettingId = 43;
+const SUBPIXEL: SettingId = 44;
+const SCANLINE: SettingId = 45;
+const DOT_MATRIX: SettingId = 46;
+const VIGNETTE: SettingId = 47;
+const SHADER_BLEND: SettingId = 48;
+const COMBO_INTERVAL: SettingId = 49;
 /// Where the rebinding rows start. Held clear of `CHANNEL`, which grows with the
 /// APU's channel count; a binding row's id is its block's base plus its place in
 /// [`bindable`].
@@ -62,6 +86,7 @@ const COMBO: SettingId = PAD_BIND + BIND_STRIDE;
 /// The pages, by their place in [`SettingsView::pages`]; the root is [`ui::ROOT_PAGE`].
 const KEYBOARD_PAGE: PageId = 1;
 const GAMEPAD_PAGE: PageId = 2;
+const VIDEO_PAGE: PageId = 3;
 
 /// What a row waiting for an input says, and what it says once a combo's first
 /// button is down and it wants the second.
@@ -80,6 +105,8 @@ const AUDIO_BUFFER_STEP: i32 = 1;
 const TARGET_FPS_STEP: f32 = 1.0;
 const FRAME_SKIP_STEP: i32 = 1;
 const SPIN_STEP_MS: i32 = 1;
+const BLEND_STEP: f32 = 0.05;
+const COMBO_STEP_US: i32 = 5_000;
 
 /// What the page is waiting for, if anything.
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
@@ -205,8 +232,116 @@ pub fn view(config: &AppConfig, palettes: &[LcdPalette], capturing: Capturing) -
             root_page(config, palettes),
             device_page("Keyboard", BIND, &bindings.keyboard, capturing),
             gamepad,
+            video_page(&config.video),
         ],
     }
+}
+
+/// A row is listed only where it does something: filters belong to the SDL2 backend,
+/// shader rows to the GL one.
+fn video_page(video: &VideoConfig) -> Page {
+    let render = &video.render;
+    let mut sections = vec![
+        Section {
+            title: "Display".to_owned(),
+            rows: vec![
+                stepper(
+                    SCALE_MODE,
+                    "Scale mode",
+                    video.interface.scale_mode.to_string(),
+                ),
+                stepper(BACKEND, "Backend", render.backend.to_string()),
+            ],
+        },
+        Section {
+            title: "Frame blend".to_owned(),
+            rows: blend_rows(render),
+        },
+    ];
+
+    match render.backend {
+        VideoBackendType::Sdl2 => sections.push(Section {
+            title: "Filters".to_owned(),
+            rows: vec![
+                toggle(GRID, "Grid", render.sdl2.grid_enabled),
+                toggle(SUBPIXEL, "Subpixel", render.sdl2.subpixel_enabled),
+                toggle(SCANLINE, "Scanline", render.sdl2.scanline_enabled),
+                toggle(DOT_MATRIX, "Dot matrix", render.sdl2.dot_matrix_enabled),
+                toggle(VIGNETTE, "Vignette", render.sdl2.vignette_enabled),
+            ],
+        }),
+        VideoBackendType::Gl => sections.push(Section {
+            title: "Shader".to_owned(),
+            rows: vec![
+                stepper(SHADER, "Shader", render.gl.shader_name.clone()),
+                stepper(
+                    SHADER_BLEND,
+                    "Frame blend",
+                    render.gl.shader_frame_blend_mode.to_string(),
+                ),
+            ],
+        }),
+    }
+
+    Page {
+        title: "Video".to_owned(),
+        sections,
+    }
+}
+
+/// Which parameters exist depends on the mode, so the rows follow it.
+fn blend_rows(render: &RenderConfig) -> Vec<Row> {
+    let blend = &render.frame_blend_mode;
+    let mut rows = vec![stepper(BLEND_MODE, "Mode", blend.name().to_owned())];
+
+    if matches!(blend, FrameBlendMode::None) {
+        return rows;
+    }
+
+    if has_alpha(blend) {
+        rows.push(stepper(
+            BLEND_ALPHA,
+            "Alpha",
+            format!("{:.2}", blend.alpha()),
+        ));
+    }
+
+    if has_fade(blend) {
+        rows.push(stepper(BLEND_FADE, "Fade", format!("{:.2}", blend.fade())));
+    }
+
+    rows.push(stepper(
+        BLEND_DIM,
+        "Dim",
+        format!("{:.2}", render.blend_dim),
+    ));
+
+    if let Some(profile) = blend.profile() {
+        rows.push(stepper(BLEND_PROFILE, "Profile", profile.name().to_owned()));
+        rows.push(stepper(BLEND_RISE, "Rise", format!("{:.2}", profile.rise)));
+        rows.push(stepper(BLEND_FALL, "Fall", format!("{:.2}", profile.fall)));
+        rows.push(stepper(
+            BLEND_BLEED,
+            "Bleed",
+            format!("{:.2}", profile.bleed),
+        ));
+    }
+
+    rows
+}
+
+fn has_alpha(blend: &FrameBlendMode) -> bool {
+    matches!(
+        blend,
+        FrameBlendMode::Linear(_) | FrameBlendMode::Additive(_) | FrameBlendMode::Gamma(_)
+    )
+}
+
+fn has_fade(blend: &FrameBlendMode) -> bool {
+    matches!(
+        blend,
+        FrameBlendMode::Additive(_) | FrameBlendMode::Exp(_) | FrameBlendMode::Gamma(_)
+    )
 }
 
 /// The buttons and shortcuts of one device, each device on a page of its own: a row
@@ -256,7 +391,7 @@ fn root_page(config: &AppConfig, palettes: &[LcdPalette]) -> Page {
                     toggle(FULLSCREEN, "Fullscreen", interface.is_fullscreen),
                     toggle(SHOW_FPS, "Show FPS", interface.show_fps),
                     stepper(SCALE, "Scale", format!("{:.0}x", interface.scale)),
-                    stepper(SHADER, "Shader", render.gl.shader_name.clone()),
+                    page(VIDEO, "Video", VIDEO_PAGE),
                 ],
             },
             Section {
@@ -288,6 +423,11 @@ fn root_page(config: &AppConfig, palettes: &[LcdPalette]) -> Page {
                 rows: vec![
                     page(KEYBOARD, "Keyboard", KEYBOARD_PAGE),
                     page(GAMEPAD, "Gamepad", GAMEPAD_PAGE),
+                    stepper(
+                        COMBO_INTERVAL,
+                        "Combo interval",
+                        format!("{} ms", config.input.combo_interval.as_millis()),
+                    ),
                 ],
             },
             Section {
@@ -495,12 +635,135 @@ pub fn apply(id: SettingId, step: i8, config: &AppConfig) -> Option<AppCmd> {
         SPIN_DURATION => ChangeConfigCmd::SpinDuration(signed(SPIN_STEP_MS, up)),
         TILE_WINDOW => ChangeConfigCmd::TileWindow,
         RESET_CONFIG => ChangeConfigCmd::Reset,
+        COMBO_INTERVAL => ChangeConfigCmd::ComboInterval(signed(COMBO_STEP_US, up)),
         // Not a config change: it opens a folder chooser and rescans.
         ROMS_DIR => return Some(AppCmd::SelectRomsDir),
+        SCALE_MODE..=SHADER_BLEND => return video(id, step, &config.video),
         _ => ChangeConfigCmd::ToggleChannel((id - CHANNEL) as u8),
     };
 
     Some(AppCmd::ChangeConfig(cmd))
+}
+
+/// The video rows all travel as one whole config: the app applies a `Video` change
+/// by handing the new config to the backend, so a row edits a copy of it.
+fn video(id: SettingId, step: i8, video: &VideoConfig) -> Option<AppCmd> {
+    let up = step >= 0;
+    let delta = signed(BLEND_STEP, up);
+    let mut next = video.clone();
+    let render = &mut next.render;
+
+    match id {
+        SCALE_MODE => next.interface.scale_mode = next_scale_mode(video.interface.scale_mode, up),
+        BACKEND => render.backend = next_backend(render.backend),
+        BLEND_MODE => render.frame_blend_mode = next_blend(&video.render.frame_blend_mode, up),
+        BLEND_ALPHA => render.frame_blend_mode.change_alpha(delta),
+        BLEND_FADE => render.frame_blend_mode.change_fade(delta),
+        BLEND_DIM => render.change_dim(delta),
+        BLEND_PROFILE => render.frame_blend_mode = FrameBlendMode::Accurate(next_profile(video)?),
+        BLEND_RISE | BLEND_FALL | BLEND_BLEED => {
+            render.frame_blend_mode = FrameBlendMode::Accurate(tuned_profile(id, delta, video)?)
+        }
+        GRID => render.sdl2.grid_enabled = !render.sdl2.grid_enabled,
+        SUBPIXEL => render.sdl2.subpixel_enabled = !render.sdl2.subpixel_enabled,
+        SCANLINE => render.sdl2.scanline_enabled = !render.sdl2.scanline_enabled,
+        DOT_MATRIX => render.sdl2.dot_matrix_enabled = !render.sdl2.dot_matrix_enabled,
+        VIGNETTE => render.sdl2.vignette_enabled = !render.sdl2.vignette_enabled,
+        SHADER_BLEND => {
+            render.gl.shader_frame_blend_mode = next_shader_blend(render.gl.shader_frame_blend_mode)
+        }
+        _ => return None,
+    }
+
+    Some(AppCmd::ChangeConfig(ChangeConfigCmd::Video(Box::new(next))))
+}
+
+fn next_scale_mode(mode: ScaleMode, up: bool) -> ScaleMode {
+    let at = match mode {
+        ScaleMode::Integer => 0,
+        ScaleMode::Fit => 1,
+        ScaleMode::Stretch => 2,
+    };
+
+    match wrapped(at, 3, up) {
+        0 => ScaleMode::Integer,
+        1 => ScaleMode::Fit,
+        _ => ScaleMode::Stretch,
+    }
+}
+
+/// Two backends, so direction makes no difference. The app says a restart is
+/// required; nothing here has to.
+fn next_backend(backend: VideoBackendType) -> VideoBackendType {
+    match backend {
+        VideoBackendType::Sdl2 => VideoBackendType::Gl,
+        VideoBackendType::Gl => VideoBackendType::Sdl2,
+    }
+}
+
+fn next_shader_blend(mode: ShaderFrameBlendMode) -> ShaderFrameBlendMode {
+    match mode {
+        ShaderFrameBlendMode::None => ShaderFrameBlendMode::Simple,
+        ShaderFrameBlendMode::Simple => ShaderFrameBlendMode::AccEven,
+        ShaderFrameBlendMode::AccEven => ShaderFrameBlendMode::AccOdd,
+        ShaderFrameBlendMode::AccOdd => ShaderFrameBlendMode::None,
+    }
+}
+
+/// Every mode starts from its own defaults, so stepping through them and back
+/// leaves the parameters where they were rather than at the last mode's values.
+fn next_blend(mode: &FrameBlendMode, up: bool) -> FrameBlendMode {
+    const COUNT: usize = 6;
+    let at = match mode {
+        FrameBlendMode::None => 0,
+        FrameBlendMode::Linear(_) => 1,
+        FrameBlendMode::Additive(_) => 2,
+        FrameBlendMode::Exp(_) => 3,
+        FrameBlendMode::Gamma(_) => 4,
+        FrameBlendMode::Accurate(_) => 5,
+    };
+
+    match wrapped(at, COUNT, up) {
+        1 => FrameBlendMode::Linear(LinearFrameBlend::default()),
+        2 => FrameBlendMode::Additive(AdditiveFrameBlend::default()),
+        3 => FrameBlendMode::Exp(ExponentialFrameBlend::default()),
+        4 => FrameBlendMode::Gamma(GammaCorrectedFrameBlend::default()),
+        5 => FrameBlendMode::Accurate(DMG_PROFILE),
+        _ => FrameBlendMode::None,
+    }
+}
+
+fn next_profile(video: &VideoConfig) -> Option<BlendProfile> {
+    let profile = video.render.frame_blend_mode.profile()?;
+
+    Some(if profile == &DMG_PROFILE {
+        POCKET_PROFILE
+    } else {
+        DMG_PROFILE
+    })
+}
+
+/// Hand-tuning a profile drops its tint back to neutral, as the text menu does:
+/// the stored tints belong to the two presets.
+fn tuned_profile(id: SettingId, delta: f32, video: &VideoConfig) -> Option<BlendProfile> {
+    let mut profile = video.render.frame_blend_mode.profile()?.clone();
+    let field = match id {
+        BLEND_RISE => &mut profile.rise,
+        BLEND_FALL => &mut profile.fall,
+        _ => &mut profile.bleed,
+    };
+    *field = core::change_f32_rounded(*field, delta).clamp(0.0, 1.0);
+    profile.tint.reset();
+
+    Some(profile)
+}
+
+fn wrapped(at: usize, count: usize, up: bool) -> usize {
+    if up {
+        core::move_next_wrapped(at, count - 1)
+    } else {
+        core::move_prev_wrapped(at, count - 1)
+    }
 }
 
 fn audio_rows(config: &AppConfig) -> Vec<Row> {
@@ -598,6 +861,44 @@ mod tests {
     fn the_id_blocks_do_not_meet() {
         assert!(bindable().len() <= BIND_STRIDE as usize);
         assert!(CHANNEL + CHANNELS_COUNT as SettingId <= BIND);
+    }
+
+    /// Every row must be claimed by an arm of `apply`. The fallback arm turns an
+    /// unclaimed id into a channel toggle, so a new row without its own arm would
+    /// silently mute an APU channel.
+    #[test]
+    fn every_row_reaches_its_own_command() {
+        for backend in [VideoBackendType::Sdl2, VideoBackendType::Gl] {
+            let mut config = AppConfig::default();
+            config.video.render.backend = backend;
+            let palettes = LcdPalette::default_palettes();
+            let view = view(&config, &palettes, Capturing::default());
+
+            for page in &view.pages {
+                for row in page.sections.iter().flat_map(|s| s.rows.iter()) {
+                    // A page leads somewhere and a binding row opens a capture;
+                    // neither goes through `apply`.
+                    if matches!(row.control, Control::Page(_) | Control::Binding { .. }) {
+                        continue;
+                    }
+
+                    let channels = CHANNEL..CHANNEL + CHANNELS_COUNT as SettingId;
+                    let cmd = apply(row.id, 1, &config);
+                    let toggled_channel = matches!(
+                        cmd,
+                        Some(AppCmd::ChangeConfig(ChangeConfigCmd::ToggleChannel(_)))
+                    );
+
+                    assert!(cmd.is_some(), "row {} asks for nothing", row.label);
+                    assert_eq!(
+                        toggled_channel,
+                        channels.contains(&row.id),
+                        "row {} fell through to the channel arm",
+                        row.label
+                    );
+                }
+            }
+        }
     }
 
     /// Which table a capture writes to follows from the row's id alone, so the pages
