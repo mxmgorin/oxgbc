@@ -163,6 +163,9 @@ pub struct Menu {
     /// number would hand out the wrong picture.
     cover_states: GridFocus,
     browse: GridFocus,
+    /// A link Confirm landed on, waiting for a frame to be opened from: `nav` runs
+    /// with no egui context, and the request has to be made through one.
+    open_url: Option<String>,
     cover_shots: crate::image::TextureCache,
     shots: crate::image::TextureCache,
     /// Covers uploaded for the shelf, which is a different set from the shots.
@@ -567,8 +570,12 @@ impl Menu {
         if step != 0 {
             let row = row_at(view, page, self.settings.index())?;
 
-            // A row leading somewhere has no value to step.
-            if matches!(row.control, Control::Page(_)) {
+            // A row leading somewhere has no value to step, and a row that only shows
+            // something has none to change.
+            if matches!(
+                row.control,
+                Control::Page(_) | Control::Text(_) | Control::Link { .. }
+            ) {
                 return None;
             }
 
@@ -579,10 +586,20 @@ impl Menu {
             FocusEvent::Activate(index) => {
                 let row = row_at(view, page, index)?;
 
-                if let Control::Page(next) = row.control {
-                    self.open_settings_page(page, next);
+                match &row.control {
+                    Control::Page(next) => {
+                        self.open_settings_page(page, *next);
 
-                    return None;
+                        return None;
+                    }
+                    // Nothing to open it with until a frame is being drawn.
+                    Control::Link { url, .. } => {
+                        self.open_url = Some(url.clone());
+
+                        return None;
+                    }
+                    Control::Text(_) => return None,
+                    _ => {}
                 }
 
                 Some(UiCmd::Setting {
@@ -627,6 +644,10 @@ impl Menu {
             }
             Screen::Pause => self.pause_overlay(root, out),
             Screen::Settings(page) => {
+                if let Some(url) = self.open_url.take() {
+                    root.ctx().open_url(egui::OpenUrl::new_tab(url));
+                }
+
                 let opened = settings(root, views.settings, page, &mut self.settings, out);
 
                 if let Some(next) = opened {

@@ -71,6 +71,14 @@ const DOT_MATRIX: SettingId = 46;
 const VIGNETTE: SettingId = 47;
 const SHADER_BLEND: SettingId = 48;
 const COMBO_INTERVAL: SettingId = 49;
+/// The About rows. Only the first does anything — it leads to the page; the rest
+/// carry an id because every row does, and are never applied.
+const ABOUT: SettingId = 50;
+const ABOUT_VERSION: SettingId = 51;
+const ABOUT_COMMIT: SettingId = 52;
+const ABOUT_BUILT: SettingId = 53;
+const ABOUT_REPO: SettingId = 54;
+const ABOUT_LICENSE: SettingId = 55;
 /// Where the rebinding rows start. Held clear of `CHANNEL`, which grows with the
 /// APU's channel count; a binding row's id is its block's base plus its place in
 /// [`bindable`].
@@ -87,6 +95,15 @@ const COMBO: SettingId = PAD_BIND + BIND_STRIDE;
 const KEYBOARD_PAGE: PageId = 1;
 const GAMEPAD_PAGE: PageId = 2;
 const VIDEO_PAGE: PageId = 3;
+const ABOUT_PAGE: PageId = 4;
+
+/// What this build is, stamped in by the build script; the manifest's own fields
+/// carry the rest.
+const VERSION: &str = env!("OXGBC_VERSION");
+const COMMIT: &str = env!("OXGBC_COMMIT");
+const BUILD_DATE: &str = env!("OXGBC_BUILD_DATE");
+const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
+const LICENSE: &str = env!("CARGO_PKG_LICENSE");
 
 /// What a row waiting for an input says, and what it says once a combo's first
 /// button is down and it wants the second.
@@ -233,6 +250,39 @@ pub fn view(config: &AppConfig, palettes: &[LcdPalette], capturing: Capturing) -
             device_page("Keyboard", BIND, &bindings.keyboard, capturing),
             gamepad,
             video_page(&config.video),
+            about_page(),
+        ],
+    }
+}
+
+/// What this build is and where it came from. Every row only shows something, bar the
+/// repository, which opens.
+fn about_page() -> Page {
+    Page {
+        title: "About".to_owned(),
+        sections: vec![
+            Section {
+                title: "Build".to_owned(),
+                rows: vec![
+                    text(ABOUT_VERSION, "Version", VERSION),
+                    text(ABOUT_COMMIT, "Commit", COMMIT),
+                    text(ABOUT_BUILT, "Built", BUILD_DATE),
+                ],
+            },
+            Section {
+                title: "Project".to_owned(),
+                rows: vec![
+                    // Shown without its scheme: the row has a value's worth of room,
+                    // and the link carries the whole address anyway.
+                    link(
+                        ABOUT_REPO,
+                        "Repository",
+                        REPOSITORY.trim_start_matches("https://"),
+                        REPOSITORY,
+                    ),
+                    text(ABOUT_LICENSE, "License", LICENSE),
+                ],
+            },
         ],
     }
 }
@@ -456,6 +506,10 @@ fn root_page(config: &AppConfig, palettes: &[LcdPalette]) -> Page {
                         control: Control::Action,
                     },
                 ],
+            },
+            Section {
+                title: "About".to_owned(),
+                rows: vec![page(ABOUT, "oxGBC", ABOUT_PAGE)],
             },
         ],
     }
@@ -804,6 +858,25 @@ fn toggle(id: SettingId, label: &str, on: bool) -> Row {
     }
 }
 
+fn text(id: SettingId, label: &str, value: &str) -> Row {
+    Row {
+        id,
+        label: label.to_owned(),
+        control: Control::Text(value.to_owned()),
+    }
+}
+
+fn link(id: SettingId, label: &str, text: &str, url: &str) -> Row {
+    Row {
+        id,
+        label: label.to_owned(),
+        control: Control::Link {
+            text: text.to_owned(),
+            url: url.to_owned(),
+        },
+    }
+}
+
 fn page(id: SettingId, label: &str, page: PageId) -> Row {
     Row {
         id,
@@ -876,9 +949,15 @@ mod tests {
 
             for page in &view.pages {
                 for row in page.sections.iter().flat_map(|s| s.rows.iter()) {
-                    // A page leads somewhere and a binding row opens a capture;
-                    // neither goes through `apply`.
-                    if matches!(row.control, Control::Page(_) | Control::Binding { .. }) {
+                    // A page leads somewhere, a binding row opens a capture, and the
+                    // About rows only show what they hold; none goes through `apply`.
+                    if matches!(
+                        row.control,
+                        Control::Page(_)
+                            | Control::Binding { .. }
+                            | Control::Text(_)
+                            | Control::Link { .. }
+                    ) {
                         continue;
                     }
 
@@ -961,6 +1040,15 @@ mod tests {
         }
 
         assert!(!held.contains(&"Menu"), "a plain toggle can be a combo");
+    }
+
+    /// A tree with no changelog or git repository to read still has to leave the page
+    /// something to show, which is what the build script's fallbacks are for.
+    #[test]
+    fn every_build_fact_says_something() {
+        for fact in [VERSION, COMMIT, BUILD_DATE, REPOSITORY, LICENSE] {
+            assert!(!fact.is_empty());
+        }
     }
 
     #[test]

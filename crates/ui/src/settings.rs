@@ -47,6 +47,16 @@ pub enum Control {
     /// `◀ value ▶`: the platform formats the value and applies the step.
     Stepper(String),
     Action,
+    /// A value the page only shows, which the About page is made of. Inert: the
+    /// platform never hears of it being stepped or picked.
+    Text(String),
+    /// `text` opens `url` when picked. Opened from here rather than handed back as a
+    /// command: egui carries the request out to whichever backend is painting us, so
+    /// no platform has to know how to reach a browser.
+    Link {
+        text: String,
+        url: String,
+    },
     /// What reaches this action now — or, while `capturing`, what the platform is
     /// still waiting for. The wording is the platform's: only it knows what an input
     /// is called and how far through a combo the capture has got.
@@ -210,6 +220,14 @@ fn show_control(ui: &mut Ui, row: &Row, out: &mut Vec<UiCmd>) -> Option<PageId> 
                     step: 1,
                 });
             }
+        }
+        Control::Text(value) => {
+            ui.label(value);
+        }
+        // The widget opens the link itself on a click; Confirm goes the long way
+        // round, through [`Menu`], which is where the next frame's context is.
+        Control::Link { text, url } => {
+            ui.hyperlink_to(text, url);
         }
         // A button rather than a label, so a pointer can start the capture the same
         // way Confirm does.
