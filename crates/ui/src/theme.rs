@@ -151,7 +151,7 @@ pub fn plate(painter: &Painter, rect: Rect, radius: f32, face: Color32) {
 
 /// The same plate part-way in. Every one of its colours fades together, so a
 /// half-bloomed chip is a fainter plate and not a plate with its edges already on.
-fn plate_faded(painter: &Painter, rect: Rect, radius: f32, face: Color32, fade: f32) {
+pub(crate) fn plate_faded(painter: &Painter, rect: Rect, radius: f32, face: Color32, fade: f32) {
     painter.rect_filled(rect, radius, face.gamma_multiply(fade));
     ramp(
         painter,
@@ -298,24 +298,34 @@ pub fn heading(ui: &mut Ui, text: impl ToString) {
 /// buttons on its far end. Returns the width it took, so a header can set something
 /// beside its title.
 pub fn heading_in(ui: &Ui, band: Rect, anchor: Align2, text: impl ToString) -> f32 {
-    let font = TextStyle::Heading.resolve(ui.style());
     let color = ui.visuals().text_color();
 
-    label_with(
+    heading_at(
         ui,
         band.shrink2(Vec2::new(ROW_PAD, 0.0)),
         anchor,
         text,
-        font,
         color,
     )
 }
 
+/// A heading in a colour of the caller's, for one that fades.
+pub fn heading_at(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString, color: Color32) -> f32 {
+    let font = TextStyle::Heading.resolve(ui.style());
+
+    label_with(ui, rect, anchor, text, font, color)
+}
+
 /// Small print in a row's second-line tone, for text set beside a heading.
 pub fn detail(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString) {
+    detail_at(ui, rect, anchor, text, detail_color(ui, 0.0));
+}
+
+/// Small print in a colour of the caller's, for one that fades.
+pub fn detail_at(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString, color: Color32) {
     let font = TextStyle::Small.resolve(ui.style());
 
-    label_with(ui, rect, anchor, text, font, detail_color(ui, 0.0));
+    label_with(ui, rect, anchor, text, font, color);
 }
 
 /// The band on its own, for a header carrying more than its title.

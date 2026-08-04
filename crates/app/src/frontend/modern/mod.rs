@@ -26,6 +26,12 @@ use std::time::Duration;
 /// Cap on egui's own repaint delay, so input keeps being polled while it idles.
 const MAX_FRAME_DELAY: Duration = Duration::from_millis(30);
 
+/// The brand logo the splash shows, built into the binary rather than read at runtime.
+/// Rasterized from `media/logo.svg` with its plate rounding dropped: the splash sets it
+/// in a rounded plate of its own, and the asset's corners would show inside that one.
+const LOGO_PNG: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../media/logo.png"));
+
 #[derive(Default)]
 pub struct ModernFrontend {
     menu: ui::Menu,
@@ -47,6 +53,9 @@ pub struct ModernFrontend {
     /// The storage walk, alive only while its screen is up.
     walk: Option<FileBrowser>,
     walk_target: BrowseTarget,
+    /// Whether the splash has reached the screen. Until it has, the work a first frame
+    /// would otherwise wait on is left undone: see [`Self::render`].
+    splash_drawn: bool,
     /// Filled by pointer input during `render`, drained by the app afterwards.
     pending: VecDeque<AppCmd>,
     stale: bool,
@@ -69,6 +78,9 @@ struct ViewData {
     browse: ui::BrowseView,
     /// What the loaded game is called, empty with none loaded.
     playing: String,
+    /// The brand logo, decoded once: the splash needs pixels, and this is the only
+    /// side with a decoder.
+    logo: Option<ui::RgbImage>,
     /// Bumped for every rebuild, so the UI can tell one view from the next.
     version: u64,
 }
@@ -84,6 +96,7 @@ impl ViewData {
                 sort,
             },
             playing: &self.playing,
+            logo: self.logo.as_ref(),
             settings: &self.settings,
             states: &self.states,
             rom_states: &self.rom_states,
@@ -98,6 +111,10 @@ impl Frontend for ModernFrontend {
     fn new(_roms: &RomsState) -> Self {
         Self {
             stale: true,
+            views: ViewData {
+                logo: logo(),
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -174,15 +191,26 @@ impl Frontend for ModernFrontend {
         self.pending.pop_front()
     }
 
+    /// The frame this builds is presented after it returns, so anything done here is time
+    /// the window spends showing the frame before. The splash reads none of the views, so
+    /// its first frame is built without them and the library is walked from the second on
+    /// — behind the splash rather than in front of it, which is what a blank window
+    /// waiting on a walk looks like.
     fn render<FS: PlatformFileSystem>(
         &mut self,
         video: &mut AppVideo,
         fb: &mut FrameBuffer,
         ctx: FrontendCtx<'_, FS>,
     ) {
-        self.refresh(&ctx);
-        self.refresh_shot(&ctx);
-        self.refresh_cover_states();
+        let splash = self.menu.on_splash();
+
+        if self.splash_drawn || !splash {
+            self.refresh(&ctx);
+            self.refresh_shot(&ctx);
+            self.refresh_cover_states();
+        }
+
+        self.splash_drawn |= splash;
         video.draw_backdrop(fb);
 
         let views = self.views.ui(into_sort(ctx.config.library_sort));
@@ -474,6 +502,21 @@ fn rom_meta(path: &Path) -> RomMeta {
     };
 
     RomMeta::load_or_create(path, &name)
+}
+
+/// The logo as pixels. A build whose asset failed to decode still runs — the splash
+/// falls back to the name in type.
+fn logo() -> Option<ui::RgbImage> {
+    let logo = image::load_from_memory(LOGO_PNG)
+        .inspect_err(|err| log::warn!("Failed to decode the logo: {err}"))
+        .ok()?
+        .to_rgb8();
+
+    Some(ui::RgbImage {
+        width: logo.width() as usize,
+        height: logo.height() as usize,
+        rgb: logo.into_raw(),
+    })
 }
 
 /// A few KB of PNG per cart, read while the shelf is built; most games have none.

@@ -79,6 +79,7 @@ const ABOUT_COMMIT: SettingId = 52;
 const ABOUT_BUILT: SettingId = 53;
 const ABOUT_REPO: SettingId = 54;
 const ABOUT_LICENSE: SettingId = 55;
+const ABOUT_AUTHOR: SettingId = 56;
 /// Where the rebinding rows start. Held clear of `CHANNEL`, which grows with the
 /// APU's channel count; a binding row's id is its block's base plus its place in
 /// [`bindable`].
@@ -272,6 +273,7 @@ fn about_page() -> Page {
             Section {
                 title: "Project".to_owned(),
                 rows: vec![
+                    text(ABOUT_AUTHOR, "Author", ui::AUTHOR),
                     // Shown without its scheme: the row has a value's worth of room,
                     // and the link carries the whole address anyway.
                     link(

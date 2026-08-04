@@ -7,6 +7,7 @@
 use crate::browse::BrowseView;
 use crate::browse::{self, BrowsePick};
 use crate::cover::{self, CoverAction, CoverOffer};
+use crate::image::RgbImage;
 use crate::library::{
     self, library, LibraryEvent, LibraryFocus, LibraryPick, LibraryView, SortBy,
 };
@@ -14,6 +15,7 @@ use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
 use crate::settings::{row_at, settings, Control, PageId, SettingId, SettingsView, ROOT_PAGE};
+use crate::splash;
 use crate::states::{self, RowPick, StatesView};
 use crate::theme::{self, WIDTH_SHEET};
 use egui::Vec2;
@@ -71,6 +73,9 @@ pub struct Views<'a> {
     pub library: LibraryView<'a>,
     /// What the shelf calls the loaded game, which the pause overlay is titled by.
     pub playing: &'a str,
+    /// The brand logo the splash shows, decoded by the platform; `None` on one that
+    /// ships without it, which falls back to the name in type.
+    pub logo: Option<&'a RgbImage>,
     pub settings: &'a SettingsView,
     pub states: &'a StatesView,
     /// Where the storage walk is, empty unless one is open.
@@ -83,6 +88,8 @@ pub struct Views<'a> {
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 enum Screen {
+    /// The name, which is what a session opens on.
+    Splash,
     #[default]
     Library,
     /// Over the dimmed game, when the UI is opened mid-play.
@@ -168,6 +175,12 @@ pub struct Menu {
     /// A link Confirm landed on, waiting for a frame to be opened from: `nav` runs
     /// with no egui context, and the request has to be made through one.
     open_url: Option<String>,
+    /// When the splash first reached the screen, by egui's clock; `None` until it is
+    /// drawn, since a session's first frame is not the moment it was asked for.
+    splash_started: Option<f64>,
+    /// The logo's texture, in a cache of its own: the asset outlives every view the
+    /// other caches are thrown away with.
+    logo: crate::image::TextureCache,
     cover_shots: crate::image::TextureCache,
     shots: crate::image::TextureCache,
     /// Covers uploaded for the shelf, which is a different set from the shots.
@@ -187,9 +200,11 @@ impl Menu {
         self.enter(screen, has_game);
     }
 
-    /// A session opens on the shelf, with the loaded game one Back away.
+    /// A session opens on the name, then the shelf, with the loaded game one Back
+    /// away.
     pub fn start(&mut self, has_game: bool) {
-        self.enter(Screen::Library, has_game);
+        self.splash_started = None;
+        self.enter(Screen::Splash, has_game);
     }
 
     fn enter(&mut self, screen: Screen, has_game: bool) {
@@ -238,6 +253,12 @@ impl Menu {
         self.screen == Screen::Browse
     }
 
+    /// Whether the name is what is on screen. It reads none of the views, so a platform
+    /// with work to do before it can fill them in can put this frame up first.
+    pub fn on_splash(&self) -> bool {
+        self.screen == Screen::Splash
+    }
+
     /// The cart whose cover is being worked on, so the platform knows whose save
     /// states to look up.
     pub fn open_cover_rom(&self) -> Option<usize> {
@@ -249,6 +270,12 @@ impl Menu {
 
     pub fn nav(&mut self, action: NavAction, views: &Views<'_>) -> Option<UiCmd> {
         match self.screen {
+            // Anything at all gets past the name.
+            Screen::Splash => {
+                self.screen = Screen::Library;
+
+                None
+            }
             Screen::Library if action == NavAction::Options => {
                 self.open_rom_actions();
 
@@ -652,6 +679,13 @@ impl Menu {
 
     pub fn show(&mut self, root: &mut egui::Ui, views: &Views<'_>, out: &mut Vec<UiCmd>) {
         match self.screen {
+            Screen::Splash => {
+                let started = *self.splash_started.get_or_insert(root.input(|i| i.time));
+
+                if splash::show(root, views.logo, &mut self.logo, started) {
+                    self.screen = Screen::Library;
+                }
+            }
             Screen::Library => {
                 let covers = &mut self.covers;
                 let asked = library(root, &views.library, &mut self.library, covers, out);
@@ -877,6 +911,7 @@ mod tests {
                 sort: SortBy::default(),
             },
             playing: "",
+            logo: None,
             settings,
             states: &EMPTY_STATES,
             rom_states: &EMPTY_STATES,
@@ -956,15 +991,18 @@ mod tests {
     }
 
     /// The remembered game is loaded at startup, but nothing has been played yet, so
-    /// the shelf comes up rather than a pause over it — and Back resumes.
+    /// the name gives way to the shelf rather than to a pause over it — and Back from
+    /// there resumes.
     #[test]
     fn a_session_starts_on_the_shelf_over_the_loaded_game() {
         let view = nested();
         let mut menu = Menu::default();
         menu.start(true);
-        menu.library.sync(0, 1);
 
+        assert_eq!(menu.nav(NavAction::Confirm, &views(&view)), None);
         assert_eq!(menu.screen, Screen::Library);
+
+        menu.library.sync(0, 1);
         assert_eq!(
             menu.nav(NavAction::Back, &views(&view)),
             Some(UiCmd::Resume)
