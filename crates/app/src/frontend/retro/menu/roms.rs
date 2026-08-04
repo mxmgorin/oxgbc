@@ -1,7 +1,7 @@
+use super::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
-use crate::menu::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use crate::video::truncate_text;
 use crate::PlatformFileSystem;
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ pub struct RomMenuItem {
 impl RomMenuItem {
     pub fn new(path: impl Into<PathBuf>, filesystem: &impl PlatformFileSystem) -> Option<Self> {
         let path = path.into();
-        let name = filesystem.get_file_name(&path)?;
+        let name = filesystem.file_name(&path)?;
 
         Some(Self {
             name: truncate_text(&name, MAX_MENU_ITEM_CHARS),
@@ -107,7 +107,7 @@ impl RomsMenu {
 }
 
 impl SubMenu for RomsMenu {
-    fn get_iterator<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         Box::new(self.items.iter().enumerate().map(move |(i, line)| {
             if i == self.selected_index {
                 format!("◀{}▶", line.name)
@@ -165,15 +165,15 @@ impl SubMenu for RomsMenu {
 
 #[cfg(test)]
 mod tests {
-    use crate::menu::roms::{RomMenuItem, RomsMenu};
-    use crate::menu::SubMenu;
+    use crate::frontend::retro::menu::roms::{RomMenuItem, RomsMenu};
+    use crate::frontend::retro::menu::SubMenu;
     use crate::PlatformFileSystem;
     use std::path::Path;
 
     pub struct TestFilesystem;
 
     impl PlatformFileSystem for TestFilesystem {
-        fn get_file_name(&self, path: &Path) -> Option<String> {
+        fn file_name(&self, path: &Path) -> Option<String> {
             path.file_stem()?.to_str().map(|x| x.to_string())
         }
 
@@ -204,7 +204,7 @@ mod tests {
             selected_index: 0,
             current_page: 0,
         };
-        let mut iter = roms.get_iterator();
+        let mut iter = roms.iter();
 
         assert!(iter.next().is_some());
         assert!(iter.next().is_some());

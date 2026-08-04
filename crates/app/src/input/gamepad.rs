@@ -10,7 +10,6 @@ use sdl2::controller::Button;
 impl BindableInput for Button {
     const COUNT: usize = gamepad_buttons().len();
 
-
     #[inline(always)]
     fn code(self) -> usize {
         self as usize
@@ -83,7 +82,7 @@ impl GamepadHandler {
             .bindings
             .gamepad
             .buttons
-            .get_cmd(button, is_pressed)
+            .cmd(button, is_pressed)
             .map(|x| x.to_owned())
     }
 

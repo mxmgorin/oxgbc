@@ -1,10 +1,10 @@
+use super::files::FilesMenu;
+use super::item::AppMenuItem;
+use super::roms::RomsMenu;
+use super::SubMenu;
 use crate::cmd::{AppCmd, BindCmds, BindTarget, ChangeConfigCmd};
 use crate::config::{InterfaceConfig, VideoBackendType, VideoConfig};
-use crate::menu::files::FilesMenu;
-use crate::menu::item::AppMenuItem;
-use crate::menu::roms::RomsMenu;
-use crate::menu::SubMenu;
-use crate::roms::RomsState;
+use crate::library::RomsState;
 use crate::video::frame_blend::FrameBlendMode;
 use crate::PlatformFileSystem;
 use core::auxiliary::joypad::JoypadButton;
@@ -129,7 +129,7 @@ pub fn advanced_menu() -> Box<[AppMenuItem]> {
 pub fn start_menu(roms: &RomsState) -> Box<[AppMenuItem]> {
     let mut items = Vec::with_capacity(10);
 
-    if roms.get_last_path().is_some() {
+    if roms.last_path().is_some() {
         items.push(AppMenuItem::Resume);
         items.push(AppMenuItem::SaveState);
         items.push(AppMenuItem::LoadState);

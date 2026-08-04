@@ -1,0 +1,10 @@
+[package]
+name = "ui"
+version = "0.1.0"
+edition = "2021"
+
+# Renderer- and platform-agnostic: only ever touches an `egui::Context`, so the
+# same screens run on SDL2 (desktop) and a web egui backend later. Adding sdl2
+# here would break that; `cargo check -p ui --target wasm32-unknown-unknown` guards it.
+[dependencies]
+egui = "0.35"

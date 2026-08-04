@@ -33,13 +33,17 @@ impl BindableInput for Scancode {
     fn kind(self) -> InputKind {
         InputKind::Keyboard
     }
+
+    fn is_cancel(self) -> bool {
+        self == Scancode::Escape
+    }
 }
 
 pub fn handle_key(config: &InputConfig, sc: Scancode, pressed: bool) -> Option<AppCmd> {
     config
         .bindings
         .keyboard
-        .get_cmd(sc, pressed)
+        .cmd(sc, pressed)
         .map(|x| x.to_owned())
 }
 

@@ -11,6 +11,7 @@ use sdl2::rect::Rect;
 
 mod font;
 pub mod frame_blend;
+pub mod palette;
 mod sdl2_filters;
 pub mod text;
 mod video;
@@ -21,6 +22,10 @@ mod overlay;
 mod sdl2_backend;
 pub mod sdl2_tiles;
 pub mod shader;
+
+/// Paints one frame of the UI. The only place this side names the toolkit.
+#[cfg(feature = "frontend-modern")]
+pub type DrawUi<'a> = &'a mut dyn FnMut(&mut egui_sdl2::egui::Ui);
 
 pub fn calc_win_height(scale: u32) -> u32 {
     LCD_Y_RES as u32 * scale
@@ -173,10 +178,10 @@ impl VideoBackend {
     }
 
     #[inline]
-    pub fn draw_menu(&mut self, buffer: &[u8], config: &VideoConfig) {
+    pub fn draw_backdrop(&mut self, buffer: &[u8], config: &VideoConfig) {
         match self {
-            VideoBackend::Sdl2(x) => x.draw_menu(buffer, config),
-            VideoBackend::Gl(x) => x.draw_menu(buffer),
+            VideoBackend::Sdl2(x) => x.draw_backdrop(buffer, config),
+            VideoBackend::Gl(x) => x.draw_backdrop(buffer),
         }
     }
 
@@ -212,13 +217,13 @@ impl VideoBackend {
     pub fn update_config(&mut self, config: &VideoConfig) {
         match self {
             VideoBackend::Sdl2(x) => x.update_config(config),
-            VideoBackend::Gl(x) => x.update_config(&config.render),
+            VideoBackend::Gl(x) => x.update_config(config),
         }
     }
     pub fn draw_tiles(&mut self, tiles: impl Iterator<Item = TileData>) {
         match self {
             VideoBackend::Sdl2(x) => x.draw_tiles(tiles),
-            VideoBackend::Gl(_) => {}
+            VideoBackend::Gl(x) => x.draw_tiles(tiles),
         }
     }
 
@@ -226,6 +231,39 @@ impl VideoBackend {
         match self {
             VideoBackend::Sdl2(x) => x.close_window(id),
             VideoBackend::Gl(x) => x.close_window(id),
+        }
+    }
+
+    /// Returns whether the UI took the event.
+    #[cfg(feature = "frontend-modern")]
+    pub fn ui_took_event(&mut self, event: &sdl2::event::Event) -> bool {
+        match self {
+            VideoBackend::Sdl2(x) => x.ui_took_event(event),
+            VideoBackend::Gl(x) => x.ui_took_event(event),
+        }
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn draw_ui(&mut self, run_ui: DrawUi) {
+        match self {
+            VideoBackend::Sdl2(x) => x.draw_ui(run_ui),
+            VideoBackend::Gl(x) => x.draw_ui(run_ui),
+        }
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn ui_frame_delay(&self) -> std::time::Duration {
+        match self {
+            VideoBackend::Sdl2(x) => x.ui_frame_delay(),
+            VideoBackend::Gl(x) => x.ui_frame_delay(),
+        }
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn destroy_ui(&mut self) {
+        match self {
+            VideoBackend::Sdl2(x) => x.destroy_ui(),
+            VideoBackend::Gl(x) => x.destroy_ui(),
         }
     }
 }

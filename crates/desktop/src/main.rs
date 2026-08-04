@@ -36,7 +36,7 @@ impl app::PlatformFileDialog for DesktopFileDialog {
 pub struct DesktopFileSystem;
 
 impl PlatformFileSystem for DesktopFileSystem {
-    fn get_file_name(&self, path: &Path) -> Option<String> {
+    fn file_name(&self, path: &Path) -> Option<String> {
         path.file_name()?.to_str().map(|x| x.to_string())
     }
 

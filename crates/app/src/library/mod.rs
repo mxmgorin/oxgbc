@@ -1,7 +1,14 @@
-use crate::{get_base_dir, PlatformFileSystem};
+//! The game collection: which ROMs the app knows about, and what it keeps beside
+//! each one — the user's name for it, its header facts, its cover.
+
+pub mod cover;
+pub mod meta;
+
+use crate::storage::base_dir;
+use crate::PlatformFileSystem;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -10,9 +17,21 @@ pub struct RomsState {
     pub selected_dir_path: Option<PathBuf>,
     opened_rom_paths: IndexSet<PathBuf>,
     loaded_rom_files: HashSet<String>,
+    /// Wall-clock seconds played, by file name rather than path — the same key
+    /// battery saves and states go by, so moving a ROM keeps its history.
+    #[serde(default)]
+    playtime_secs: HashMap<String, u64>,
 }
 
 impl RomsState {
+    pub fn add_playtime(&mut self, game: &str, secs: u64) {
+        *self.playtime_secs.entry(game.to_owned()).or_default() += secs;
+    }
+
+    pub fn playtime(&self, game: &str) -> u64 {
+        self.playtime_secs.get(game).copied().unwrap_or_default()
+    }
+
     pub fn opened_count(&self) -> usize {
         self.opened_rom_paths.len()
     }
@@ -37,7 +56,7 @@ impl RomsState {
             if file.ends_with(".gb") || file.ends_with(".gbc") {
                 if can_split_paths {
                     let path = PathBuf::from(file);
-                    if let Some(name) = filesystem.get_file_name(&path) {
+                    if let Some(name) = filesystem.file_name(&path) {
                         self.loaded_rom_files.insert(name); // store just the name
                     }
                 } else {
@@ -49,7 +68,14 @@ impl RomsState {
         Ok(self.loaded_rom_files.len())
     }
 
+    /// Stored absolute where the platform has real paths: a game launched as
+    /// `roms/game.gb` would otherwise point nowhere the next time the app starts
+    /// somewhere else, and would sit beside its own absolute self on the shelf.
+    /// What cannot be canonicalized — Android hands out `content://` URIs — is kept
+    /// as it came.
     pub fn insert_or_update(&mut self, path: PathBuf) {
+        let path = path.canonicalize().unwrap_or(path);
+
         self.opened_rom_paths.shift_remove(&path);
         self.opened_rom_paths.insert(path);
     }
@@ -58,12 +84,12 @@ impl RomsState {
         self.opened_rom_paths.shift_remove(path);
     }
 
-    pub fn get_last_path(&self) -> Option<&PathBuf> {
+    pub fn last_path(&self) -> Option<&PathBuf> {
         self.opened_rom_paths.iter().last()
     }
 
-    pub fn get_or_create(fs: &impl PlatformFileSystem) -> Self {
-        let path = Self::get_path();
+    pub fn load_or_create(fs: &impl PlatformFileSystem) -> Self {
+        let path = Self::path();
 
         let mut obj = if path.exists() {
             let res: Result<RomsState, _> = core::read_json_file(&path);
@@ -75,6 +101,15 @@ impl RomsState {
         } else {
             Default::default()
         };
+
+        // Paths written before they were stored absolute, and any that have since
+        // been reached another way, settle here — otherwise a game keeps a second
+        // spelling of itself for good.
+        obj.opened_rom_paths = obj
+            .opened_rom_paths
+            .drain(..)
+            .map(|path| path.canonicalize().unwrap_or(path))
+            .collect();
 
         if let Some(path) = obj.selected_dir_path.take() {
             if let Err(err) = obj.load_from_dir(path, fs) {
@@ -108,12 +143,12 @@ impl RomsState {
     }
 
     pub fn save_file(&self) {
-        if let Err(err) = core::save_json_file(RomsState::get_path(), self) {
+        if let Err(err) = core::save_json_file(RomsState::path(), self) {
             log::error!("Failed to save ROMs: {err}");
         }
     }
 
-    fn get_path() -> PathBuf {
-        get_base_dir().join("roms.json")
+    fn path() -> PathBuf {
+        base_dir().join("roms.json")
     }
 }

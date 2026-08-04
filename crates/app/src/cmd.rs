@@ -1,5 +1,5 @@
 use crate::{
-    config::VideoConfig,
+    config::{LibrarySort, VideoConfig},
     input::bindings::{BindableInput, InputIndex, InputKind},
 };
 use core::{
@@ -17,16 +17,34 @@ pub enum AppCmd {
     RestartRom,
     ChangeMode(RunMode),
     SaveState(SaveStateCmd, Option<usize>),
+    /// Throws away the state file of the loaded game's slot.
+    DeleteState(usize),
+    /// Names the state in the loaded game's slot; an empty name clears it.
+    RenameState(usize, String),
+    /// Names a ROM of the library; an empty name goes back to its file name.
+    RenameRom(PathBuf, String),
+    /// Asks for a cover picture for this ROM, however this platform asks.
+    SetRomCover(PathBuf),
+    /// Stores this picture as that ROM's cover; the asking is already done.
+    UseRomCover(PathBuf, PathBuf),
+    /// Takes a ROM's cover away.
+    RemoveRomCover(PathBuf),
+    /// Makes the screen of one of this ROM's states its cover.
+    SetCoverFromState(PathBuf, usize),
     SelectRom,
     Quit,
     ChangeConfig(ChangeConfigCmd),
+    /// Asks for a ROMs folder, however this platform asks.
     SelectRomsDir,
+    /// Shelves this folder's games; the asking is already done.
+    UseRomsDir(PathBuf),
     ReleaseButton(JoypadButton),
     PressButton(JoypadButton),
     SetFileBrowsePath(PathBuf),
     ToggleFullscreen,
     Macro(Box<[AppCmd]>),
     BindInput(BindInputCmd),
+    BindCombo(BindComboCmd),
     ToggleDebug,
     ToggleStepping,
     StepFrame,
@@ -43,16 +61,25 @@ impl AppCmd {
             AppCmd::RestartRom => "Restart ROM",
             AppCmd::ChangeMode(m) => m.name(),
             AppCmd::SaveState(m, _) => m.name(),
+            AppCmd::DeleteState(_) => "Delete State",
+            AppCmd::RenameState(_, _) => "Rename State",
+            AppCmd::RenameRom(_, _) => "Rename ROM",
+            AppCmd::SetRomCover(_) => "Set Cover",
+            AppCmd::UseRomCover(_, _) => "Use Cover",
+            AppCmd::RemoveRomCover(_) => "Remove Cover",
+            AppCmd::SetCoverFromState(_, _) => "Cover From State",
             AppCmd::SelectRom => "Select ROM",
             AppCmd::Quit => "Quit",
             AppCmd::ChangeConfig(conf) => conf.name(),
             AppCmd::SelectRomsDir => "Select ROMs Dir",
+            AppCmd::UseRomsDir(_) => "Use ROMs Dir",
             AppCmd::ReleaseButton(_) => "Release Button",
             AppCmd::PressButton(_) => "Press Button",
             AppCmd::SetFileBrowsePath(_) => "Set File Browse Path",
             AppCmd::ToggleFullscreen => "Fullscreen",
             AppCmd::Macro(_) => "Macro",
             AppCmd::BindInput(_) => "Bind Input",
+            AppCmd::BindCombo(_) => "Bind Combo",
             AppCmd::ToggleDebug => "Toggle Debug",
             AppCmd::StepFrame => "Step Frame",
             AppCmd::ToggleStepping => "Toggle Stepping",
@@ -91,6 +118,40 @@ pub struct BindInputCmd {
 pub enum BindTarget {
     Buttons(Box<[JoypadButton]>),
     Cmds(BindCmds),
+}
+
+/// A pair of gamepad buttons pointed at one action.
+///
+/// Its own command rather than a second index on [`BindInputCmd`]: combos live in a
+/// table of their own, fire on the press alone, and exist for no other device.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct BindComboCmd {
+    /// Button codes, not `sdl2::controller::Button`, which has no serde of its own —
+    /// and an [`AppCmd`] is written into the binding files.
+    pub first: usize,
+    pub second: usize,
+    pub target: BindTarget,
+}
+
+impl BindTarget {
+    /// What the target comes down to on the wire: the command for the press, and the
+    /// one for the release when the target has any.
+    pub fn cmds(&self) -> (AppCmd, Option<AppCmd>) {
+        match self {
+            BindTarget::Buttons(buttons) if buttons.len() == 1 => (
+                AppCmd::PressButton(buttons[0]),
+                Some(AppCmd::ReleaseButton(buttons[0])),
+            ),
+            BindTarget::Buttons(buttons) => (
+                AppCmd::new_macro_buttons(buttons.clone(), true),
+                Some(AppCmd::new_macro_buttons(buttons.clone(), false)),
+            ),
+            BindTarget::Cmds(cmds) => (
+                (*cmds.pressed).clone(),
+                cmds.released.as_ref().map(|cmd| (**cmd).clone()),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -153,6 +214,7 @@ pub enum ChangeConfigCmd {
     FrameSkip(usize),
     SetGbModel(Option<GbModel>),
     TargetFps(f32),
+    LibrarySort(LibrarySort),
 }
 
 impl ChangeConfigCmd {
@@ -190,6 +252,7 @@ impl ChangeConfigCmd {
             ChangeConfigCmd::FrameSkip(_) => "Frame Skip",
             ChangeConfigCmd::SetGbModel(_) => "Model",
             ChangeConfigCmd::TargetFps(_) => "Target Fps",
+            ChangeConfigCmd::LibrarySort(_) => "Library Sort",
         }
     }
 }

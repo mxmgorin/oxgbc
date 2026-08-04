@@ -1,15 +1,26 @@
-use crate::config::{RenderConfig, ScaleMode};
+use crate::config::{RenderConfig, ScaleMode, VideoConfig};
+use crate::video::sdl2_tiles::Sdl2TilesView;
 use crate::video::shader::{ShaderFrameBlendMode, ShaderPrecision};
+#[cfg(feature = "frontend-modern")]
+use crate::video::DrawUi;
 use crate::video::{calc_win_height, calc_win_width, new_scaled_rect, shader};
+use core::ppu::tile::TileData;
 use gl::types::{GLenum, GLint};
 use sdl2::rect::Rect;
 use sdl2::video::{GLContext, GLProfile, Window};
 use sdl2::{Sdl, VideoSubsystem};
 use std::ffi::CStr;
 use std::ptr;
+#[cfg(feature = "frontend-modern")]
+use std::sync::Arc;
 
 pub struct GlBackend {
     gl: GLSetup,
+    /// The tile viewer's own window, which is not a GL one — it is the same canvas
+    /// view the SDL2 backend opens, and it brings its own renderer.
+    tiles_view: Option<Sdl2TilesView>,
+    #[cfg(feature = "frontend-modern")]
+    egui: egui_sdl2::EguiGlow,
     shader_program: u32,
     frame_texture_id: u32,
     prev_frame_texture_id: u32,
@@ -22,49 +33,98 @@ pub struct GlBackend {
 }
 
 impl GlBackend {
-    pub fn new(sdl: &Sdl, game_rect: Rect, config: &RenderConfig) -> Result<Self, String> {
+    pub fn new(sdl: &Sdl, game_rect: Rect, config: &VideoConfig) -> Result<Self, String> {
         let gl = create_gl_with_fallback(sdl, game_rect.width(), game_rect.height())?;
+        let render = &config.render;
+        #[cfg(feature = "frontend-modern")]
+        let egui = {
+            let egui = egui_sdl2::EguiGlow::new(&gl.window, gl.glow.clone(), None, true);
+            ui::theme::apply(&egui.ctx, &ui::theme::OXIDE);
+
+            egui
+        };
 
         unsafe {
-            gl::Enable(gl::TEXTURE_2D);
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
             gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
 
         let mut obj = Self {
+            #[cfg(feature = "frontend-modern")]
+            egui,
+            tiles_view: None,
             shader_program: 0,
             frame_texture_id: 0,
             vao: 0,
             vbo: 0,
             uniform_locations: Default::default(),
             prev_frame_texture_id: 0,
-            shader_frame_blend_mode: config.gl.shader_frame_blend_mode,
+            shader_frame_blend_mode: render.gl.shader_frame_blend_mode,
             prev_buffer: Box::new([]),
             game_rect,
             gl,
         };
         obj.load_shader(
-            &config.gl.shader_name,
-            config.gl.shader_frame_blend_mode,
-            config.gl.shader_precision,
+            &render.gl.shader_name,
+            render.gl.shader_frame_blend_mode,
+            render.gl.shader_precision,
         )?;
+        obj.show_tiles(config.interface.show_tiles);
 
         Ok(obj)
     }
 
     /// Closes the window and returns true when main window is closed.
-    pub fn close_window(&mut self, _id: u32) -> bool {
+    pub fn close_window(&mut self, id: u32) -> bool {
+        if self
+            .tiles_view
+            .as_ref()
+            .is_some_and(|x| x.window_id() == id)
+        {
+            self.tiles_view = None;
+
+            return false;
+        }
+
         true
     }
 
-    pub fn update_config(&mut self, config: &RenderConfig) {
+    pub fn update_config(&mut self, config: &VideoConfig) {
         self.load_shader(
-            &config.gl.shader_name,
-            config.gl.shader_frame_blend_mode,
-            config.gl.shader_precision,
+            &config.render.gl.shader_name,
+            config.render.gl.shader_frame_blend_mode,
+            config.render.gl.shader_precision,
         )
         .unwrap();
+        self.show_tiles(config.interface.show_tiles);
+    }
+
+    /// Opens or closes the tile viewer. Its canvas takes the GL context over for
+    /// itself, so the main window's is made current again — every draw after this
+    /// one goes to the game window and would otherwise land nowhere.
+    fn show_tiles(&mut self, show: bool) {
+        if show == self.tiles_view.is_some() {
+            return;
+        }
+
+        self.tiles_view = show.then(|| Sdl2TilesView::new(&self.gl.video_subsystem));
+        self.make_current();
+    }
+
+    pub fn draw_tiles(&mut self, tiles: impl Iterator<Item = TileData>) {
+        let Some(tiles_view) = self.tiles_view.as_mut() else {
+            return;
+        };
+
+        tiles_view.draw_tiles(tiles);
+        self.make_current();
+    }
+
+    fn make_current(&self) {
+        if let Err(err) = self.gl.window.gl_make_current(&self.gl.context) {
+            log::error!("Failed to make the game window's GL context current: {err}");
+        }
     }
 
     fn draw_quad(&self) {
@@ -74,7 +134,13 @@ impl GlBackend {
         }
     }
 
-    pub fn draw_menu(&mut self, buffer: &[u8]) {
+    pub fn draw_backdrop(&mut self, buffer: &[u8]) {
+        // Uniforms apply to the bound program, and egui's is still bound after it
+        // painted the previous frame.
+        unsafe {
+            gl::UseProgram(self.shader_program);
+        }
+
         self.uniform_locations
             .send_frame_blend_mode(ShaderFrameBlendMode::None);
 
@@ -124,6 +190,10 @@ impl GlBackend {
         let height = RenderConfig::HEIGHT;
 
         unsafe {
+            // egui_glow leaves its premultiplied-alpha blend func behind.
+            #[cfg(feature = "frontend-modern")]
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
             gl::Clear(gl::COLOR_BUFFER_BIT);
             gl::UseProgram(self.shader_program);
 
@@ -196,6 +266,29 @@ impl GlBackend {
         self.gl.window.gl_swap_window();
     }
 
+    /// Returns whether the UI took the event.
+    #[cfg(feature = "frontend-modern")]
+    pub fn ui_took_event(&mut self, event: &sdl2::event::Event) -> bool {
+        self.egui.on_event(&self.gl.window, event).consumed
+    }
+
+    /// Runs and paints egui over the frame already drawn; [`Self::show`] presents.
+    #[cfg(feature = "frontend-modern")]
+    pub fn draw_ui(&mut self, run_ui: DrawUi) {
+        self.egui.run_ui(run_ui);
+        self.egui.paint();
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn ui_frame_delay(&self) -> std::time::Duration {
+        self.egui.repaint_delay()
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn destroy_ui(&mut self) {
+        self.egui.destroy();
+    }
+
     /// Loads and initializes shaders + GPU resources
     pub fn load_shader(
         &mut self,
@@ -255,7 +348,12 @@ impl GlBackend {
 
         self.shader_program = program;
 
-        self.uniform_locations = get_uniform_locations(self.shader_program);
+        // Uniforms below go to the bound program; nothing binds it after linking.
+        unsafe {
+            gl::UseProgram(program);
+        }
+
+        self.uniform_locations = read_uniform_locations(self.shader_program);
         self.uniform_locations.send_image();
         self.uniform_locations
             .send_frame_blend_mode(frame_blend_mode);
@@ -288,7 +386,7 @@ impl GlBackend {
     }
 }
 
-fn get_uniform_locations(program: u32) -> UniformLocations {
+fn read_uniform_locations(program: u32) -> UniformLocations {
     unsafe {
         UniformLocations {
             image: gl::GetUniformLocation(program, c"image".as_ptr() as *const _),
@@ -361,11 +459,14 @@ impl UniformLocations {
 }
 
 pub struct GLSetup {
-    _video_subsystem: VideoSubsystem,
-    _context: GLContext,
+    video_subsystem: VideoSubsystem,
+    context: GLContext,
     pub window: Window,
     pub shader_version: &'static str,
     pub gles: Option<Gles>,
+    /// Same context as the `gl` crate's, loaded through glow for egui.
+    #[cfg(feature = "frontend-modern")]
+    pub glow: Arc<egui_sdl2::egui_glow::glow::Context>,
 }
 
 #[derive(Debug)]
@@ -415,6 +516,12 @@ pub fn create_gl_with_fallback(sdl: &Sdl, width: u32, height: u32) -> Result<GLS
         };
 
         gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
+        #[cfg(feature = "frontend-modern")]
+        let glow = Arc::new(unsafe {
+            egui_sdl2::egui_glow::glow::Context::from_loader_function(|s| {
+                video.gl_get_proc_address(s) as *const _
+            })
+        });
 
         let gles = if use_gles && is_gles2 {
             let mut frag_prec = "mediump";
@@ -469,8 +576,10 @@ pub fn create_gl_with_fallback(sdl: &Sdl, width: u32, height: u32) -> Result<GLS
         log::info!("Using {profile:?} {major}.{minor} -> {shader_version}, GLES2: {gles:?}");
 
         return Ok(GLSetup {
-            _context: context,
-            _video_subsystem: video,
+            context,
+            video_subsystem: video,
+            #[cfg(feature = "frontend-modern")]
+            glow,
             window,
             shader_version,
             gles,

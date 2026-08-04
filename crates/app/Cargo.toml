@@ -3,9 +3,15 @@ name = "app"
 version = "0.1.0"
 edition = "2021"
 authors = ["troidem <mxmgorin@gmail.com>"]
+# Read back by the About page through `env!`, so the two can't drift from the manifest.
+repository = "https://github.com/mxmgorin/oxgbc"
+license = "GPL-3.0"
 
 [features]
-default = ["file-dialog", "file-browser"]
+default = ["frontend-modern", "file-dialog", "file-browser"]
+# Exactly one frontend per build.
+frontend-modern = ["dep:egui-sdl2", "dep:ui"]
+frontend-retro = []
 file-dialog = []
 file-browser = []
 sdl2-bundled = ["sdl2/bundled"]
@@ -22,6 +28,19 @@ log = "0.4.27"
 indexmap = { version = "2.10.0", features = ["serde"] }
 arrayvec = "0.7.6"
 zip = "8.2.0"
+# Save-state thumbnails and cartridge covers. PNG is what we write; JPEG is what
+# a cover picked off the disk often is.
+image = { version = "0.25.9", default-features = false, features = [
+    "png",
+    "jpeg",
+] }
+# `egui` and `glow` come through this dep, so their versions can't drift.
+egui-sdl2 = { version = "0.7", default-features = false, features = [
+    "glow-backend",
+    "canvas-backend",
+    "links",
+], optional = true }
+ui = { path = "../ui", optional = true }
 
 [target.'cfg(target_os="macos")'.dependencies.sdl2]
 features=["bundled", "static-link"]

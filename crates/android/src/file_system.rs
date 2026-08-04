@@ -1,14 +1,14 @@
-use crate::java::{get_file_name, read_dir, read_uri_bytes};
+use crate::java::{file_name, read_dir, read_uri_bytes};
 use app::PlatformFileSystem;
 use std::path::Path;
 
 pub struct AndroidFileSystem;
 
 impl PlatformFileSystem for AndroidFileSystem {
-    fn get_file_name(&self, path: &Path) -> Option<String> {
+    fn file_name(&self, path: &Path) -> Option<String> {
         let path = path.to_str()?;
 
-        get_file_name(path)
+        file_name(path)
     }
 
     fn read_file_bytes(&self, path: &Path) -> Option<Box<[u8]>> {

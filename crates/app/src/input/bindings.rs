@@ -13,6 +13,13 @@ pub trait BindableInput: Copy {
     fn name(self) -> &'static str;
     fn from_name(name: &str) -> Option<Self>;
     fn kind(self) -> InputKind;
+
+    /// Whether this input backs out of a rebinding instead of being captured by it.
+    /// Only the keyboard has one to spare: on a pad every button is worth binding,
+    /// and a capture landing on the wrong one is undone by capturing again.
+    fn is_cancel(self) -> bool {
+        false
+    }
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -63,14 +70,15 @@ pub struct InputBindings<K: BindableInput> {
 
 impl<I: BindableInput> InputBindings<I> {
     #[inline(always)]
-    pub fn get_cmd(&self, input: I, pressed: bool) -> Option<&AppCmd> {
+    pub fn cmd(&self, input: I, pressed: bool) -> Option<&AppCmd> {
         self.cmds
             .get(InputIndex::new(input, pressed).index())
             .and_then(|x| x.as_ref())
     }
 
-    pub fn get_desc(&self, cmd: &AppCmd) -> String {
-        let desc = self.get_inputs(cmd)
+    pub fn desc(&self, cmd: &AppCmd) -> String {
+        let desc = self
+            .inputs(cmd)
             .into_iter()
             .map(|(i, _)| i.name())
             .collect::<Vec<_>>()
@@ -83,7 +91,7 @@ impl<I: BindableInput> InputBindings<I> {
         }
     }
 
-    pub fn get_inputs(&self, cmd: &AppCmd) -> Vec<(I, bool)> {
+    pub fn inputs(&self, cmd: &AppCmd) -> Vec<(I, bool)> {
         let mut inputs = Vec::with_capacity(2);
 
         for (i, item) in self.cmds.iter().enumerate() {
@@ -105,6 +113,22 @@ impl<I: BindableInput> InputBindings<I> {
     pub fn bind_cmd(&mut self, input: I, pressed: bool, cmd: AppCmd) {
         let i = InputIndex::new(input, pressed).index();
         self.cmds[i] = Some(cmd);
+    }
+
+    pub fn unbind(&mut self, input: I, pressed: bool) {
+        let i = InputIndex::new(input, pressed).index();
+        self.cmds[i] = None;
+    }
+
+    /// Takes `cmd` off every input that reaches it. Rebinding replaces rather than
+    /// adds: leaving the old input in place would have two keys doing one thing and
+    /// no way to see it from the settings row, which shows one binding.
+    pub fn clear_cmd(&mut self, cmd: &AppCmd) {
+        for bound in self.cmds.iter_mut() {
+            if bound.as_ref() == Some(cmd) {
+                *bound = None;
+            }
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (I, bool, &AppCmd)> {

@@ -1,7 +1,7 @@
 use crate::video::text::FontSize;
 
 #[inline]
-pub fn get_char_bitmap(c: char, size: FontSize) -> &'static [u8] {
+pub fn char_bitmap(c: char, size: FontSize) -> &'static [u8] {
     match size {
         FontSize::Font3x4 => char_bitmap_3x4(c),
         FontSize::Font4x5 => char_bitmap_4x5(c),

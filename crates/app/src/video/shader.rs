@@ -35,7 +35,7 @@ impl fmt::Display for ShaderFrameBlendMode {
             ShaderFrameBlendMode::None => write!(f, "None"),
             ShaderFrameBlendMode::Simple => write!(f, "Simple"),
             ShaderFrameBlendMode::AccEven => write!(f, "Acc Even"),
-            ShaderFrameBlendMode::AccOdd => write!(f, "Acc Odd")
+            ShaderFrameBlendMode::AccOdd => write!(f, "Acc Odd"),
         }
     }
 }

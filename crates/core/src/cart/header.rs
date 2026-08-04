@@ -36,6 +36,10 @@ pub struct CartHeader {
 }
 
 impl CartHeader {
+    /// Bytes of a ROM the header parsers index into, so a reader that only wants
+    /// header fields knows how much of the file to load.
+    pub const END: usize = 0x0150;
+
     pub fn new(rom_bytes: &[u8]) -> Result<Self, String> {
         if rom_bytes.len() < 0x50 {
             return Err("Insufficient data for cart header".into());

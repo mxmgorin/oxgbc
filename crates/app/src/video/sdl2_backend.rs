@@ -1,6 +1,8 @@
 use crate::config::{RenderConfig, ScaleMode, VideoConfig};
 use crate::video::sdl2_filters::Sdl2Filters;
 use crate::video::sdl2_tiles::Sdl2TilesView;
+#[cfg(feature = "frontend-modern")]
+use crate::video::DrawUi;
 use crate::video::{calc_win_height, calc_win_width, new_scaled_rect};
 use core::ppu::tile::TileData;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -16,6 +18,8 @@ pub struct Sdl2Backend {
     game_texture: Texture,
     game_rect: Rect,
     filters: Sdl2Filters,
+    #[cfg(feature = "frontend-modern")]
+    egui: egui_sdl2::EguiCanvas,
     pub canvas: Canvas<Window>,
 }
 
@@ -29,6 +33,13 @@ impl Sdl2Backend {
             .build()
             .unwrap();
         let mut canvas = window.into_canvas().build().unwrap();
+        #[cfg(feature = "frontend-modern")]
+        let egui = {
+            let egui = egui_sdl2::EguiCanvas::new(&canvas);
+            ui::theme::apply(&egui.ctx, &ui::theme::OXIDE);
+
+            egui
+        };
         let texture_creator = canvas.texture_creator();
         let mut game_texture = texture_creator
             .create_texture_streaming(
@@ -46,6 +57,8 @@ impl Sdl2Backend {
             } else {
                 None
             },
+            #[cfg(feature = "frontend-modern")]
+            egui,
             video_subsystem,
             texture_creator,
             canvas,
@@ -65,7 +78,7 @@ impl Sdl2Backend {
     /// Closes the window and returns true when main window is closed.
     pub fn close_window(&mut self, id: u32) -> bool {
         if let Some(tiles) = self.tiles_view.as_mut() {
-            if tiles.get_window_id() == id {
+            if tiles.window_id() == id {
                 self.tiles_view = None;
                 return false;
             }
@@ -84,7 +97,7 @@ impl Sdl2Backend {
         self.filters.apply(&mut self.canvas, &config.render.sdl2);
     }
 
-    pub fn draw_menu(&mut self, buffer: &[u8], config: &VideoConfig) {
+    pub fn draw_backdrop(&mut self, buffer: &[u8], config: &VideoConfig) {
         self.clear();
 
         self.game_texture
@@ -98,6 +111,29 @@ impl Sdl2Backend {
 
     pub fn show(&mut self) {
         self.canvas.present();
+    }
+
+    /// Returns whether the UI took the event.
+    #[cfg(feature = "frontend-modern")]
+    pub fn ui_took_event(&mut self, event: &sdl2::event::Event) -> bool {
+        self.egui.on_event(&self.canvas, event).consumed
+    }
+
+    /// Runs and paints egui over the frame already drawn; [`Self::show`] presents.
+    #[cfg(feature = "frontend-modern")]
+    pub fn draw_ui(&mut self, run_ui: DrawUi) {
+        self.egui.run_ui(run_ui);
+        self.egui.paint(&mut self.canvas);
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn ui_frame_delay(&self) -> std::time::Duration {
+        self.egui.repaint_delay()
+    }
+
+    #[cfg(feature = "frontend-modern")]
+    pub fn destroy_ui(&mut self) {
+        self.egui.destroy();
     }
 
     pub fn set_scale(&mut self, scale: u32, mode: ScaleMode) -> Result<(), String> {

@@ -4,7 +4,8 @@ members = [
     "crates/app",
     "crates/cli",
     "crates/desktop",
-    "crates/android"
+    "crates/android",
+    "crates/ui"
 ]
 # `web` is a wasm-only cdylib built via wasm-pack; kept out of the workspace so a
 # plain `cargo build` for desktop/Android never tries to compile it for the host.

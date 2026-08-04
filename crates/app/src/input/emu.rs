@@ -1,5 +1,6 @@
 use crate::app::{App, AppState};
 use crate::cmd::AppCmd;
+use crate::frontend::{Frontend, FrontendCtx, NavAction};
 use crate::{PlatformFileDialog, PlatformFileSystem};
 use core::auxiliary::joypad::JoypadButton;
 use core::emu::Emu;
@@ -28,13 +29,29 @@ where
     None
 }
 
+/// While the UI is open a button drives it; otherwise it reaches the joypad.
+fn nav<FS, FD>(action: NavAction, app: &mut App<FS, FD>) -> Option<AppCmd>
+where
+    FS: PlatformFileSystem,
+    FD: PlatformFileDialog,
+{
+    let ctx = FrontendCtx {
+        config: &app.config,
+        fs: &app.platform.fs,
+        roms: &app.roms,
+        palettes: &app.palettes,
+    };
+
+    app.frontend.nav(action, ctx)
+}
+
 pub fn handle_up<FS, FD>(pressed: bool, app: &mut App<FS, FD>, emu: &mut Emu)
 where
     FS: PlatformFileSystem,
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        app.menu.move_up();
+        nav(NavAction::Up, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.up = pressed;
     }
@@ -46,7 +63,7 @@ where
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        app.menu.move_down();
+        nav(NavAction::Down, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.down = pressed;
     }
@@ -58,7 +75,7 @@ where
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        return app.menu.move_left(&app.config);
+        return nav(NavAction::Left, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.left = pressed;
     }
@@ -72,7 +89,7 @@ where
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        return app.menu.move_right(&app.config);
+        return nav(NavAction::Right, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.right = pressed
     }
@@ -86,7 +103,7 @@ where
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        return app.menu.select(&app.config, &app.platform.fs, &app.roms);
+        return nav(NavAction::Confirm, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.a = pressed;
     }
@@ -100,7 +117,7 @@ where
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        app.menu.back();
+        nav(NavAction::Back, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.b = pressed;
     }
@@ -112,7 +129,7 @@ where
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        return app.menu.select(&app.config, &app.platform.fs, &app.roms);
+        return nav(NavAction::Confirm, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.start = pressed;
     }
@@ -120,13 +137,15 @@ where
     None
 }
 
+/// Select is the options button while a menu is up: B already backs out, so
+/// nothing else needs it.
 pub fn handle_select<FS, FD>(pressed: bool, app: &mut App<FS, FD>, emu: &mut Emu)
 where
     FS: PlatformFileSystem,
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        app.menu.back();
+        nav(NavAction::Options, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.select = pressed;
     }

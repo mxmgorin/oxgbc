@@ -1,4 +1,4 @@
-use crate::get_base_dir;
+use crate::storage::base_dir;
 use core::save_json_file;
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -11,6 +11,20 @@ pub struct LcdPalette {
 }
 
 impl LcdPalette {
+    /// The stored palettes, or the built-in set written to disk for editing.
+    pub fn load_or_create() -> Box<[LcdPalette]> {
+        let path = Self::default_palettes_path();
+
+        if path.exists() {
+            return core::read_json_file(&path).unwrap();
+        }
+
+        let palettes = Self::default_palettes().into_boxed_slice();
+        Self::save_palettes_file(&palettes).unwrap();
+
+        palettes
+    }
+
     pub fn save_palettes_file(palettes: &Box<[LcdPalette]>) -> Result<(), io::Error> {
         let path = Self::default_palettes_path();
 
@@ -18,7 +32,7 @@ impl LcdPalette {
     }
 
     pub fn default_palettes_path() -> PathBuf {
-        get_base_dir().join("palettes.json")
+        base_dir().join("palettes.json")
     }
 
     pub fn default_palettes() -> Vec<LcdPalette> {

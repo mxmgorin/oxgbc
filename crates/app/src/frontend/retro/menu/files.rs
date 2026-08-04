@@ -1,7 +1,7 @@
+use super::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
-use crate::file_browser::{FileBrowser, FILE_BROWSER_BACK_ITEM};
-use crate::menu::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
+use crate::storage::browser::{FileBrowser, FILE_BROWSER_BACK_ITEM};
 use crate::video::truncate_text;
 use std::path::Path;
 
@@ -25,10 +25,10 @@ impl FilesMenu {
 }
 
 impl SubMenu for FilesMenu {
-    fn get_iterator<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        let selected = self.fb.get_selected();
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        let selected = self.fb.selected();
 
-        Box::new(self.fb.get_page_entries().iter().map(move |path| {
+        Box::new(self.fb.page_entries().iter().map(move |path| {
             let mut name = path
                 .file_name()
                 .unwrap_or_default()
@@ -74,7 +74,7 @@ impl SubMenu for FilesMenu {
     }
 
     fn select(&mut self, _config: &AppConfig) -> (Option<AppCmd>, bool) {
-        if let Some(selected) = self.fb.get_selected() {
+        if let Some(selected) = self.fb.selected() {
             return if selected.is_dir() || selected == Path::new(FILE_BROWSER_BACK_ITEM) {
                 if let Err(err) = self.fb.enter() {
                     log::error!("{err:?}");

@@ -1,7 +1,7 @@
-use crate::get_base_dir;
 use crate::input::config::InputConfig;
-use crate::palette::LcdPalette;
+use crate::storage::base_dir;
 use crate::video::frame_blend::FrameBlendMode;
+use crate::video::palette::LcdPalette;
 use crate::video::shader::{ShaderFrameBlendMode, ShaderPrecision};
 use core::apu::apu::ApuConfig;
 use core::emu::config::{EmuConfig, GbModel};
@@ -26,6 +26,16 @@ pub struct AppConfig {
     pub audio: AudioConfig,
     pub video: VideoConfig,
     pub input: InputConfig,
+    #[serde(default)]
+    pub library_sort: LibrarySort,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Default)]
+pub enum LibrarySort {
+    #[default]
+    Recent,
+    Name,
+    Playtime,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
@@ -105,7 +115,7 @@ pub fn update_frame_skip(v: usize, delta: isize) -> usize {
 }
 
 impl AppConfig {
-    pub fn get_emu_config(&self) -> &EmuConfig {
+    pub fn emu_config(&self) -> &EmuConfig {
         &self.emulation
     }
 
@@ -113,20 +123,28 @@ impl AppConfig {
         self.emulation = config;
     }
 
+    /// Highest save-state slot; a slot is a file named after its index, so this
+    /// is only a bound on how many a game may keep.
+    pub const MAX_SAVE_SLOT: usize = 99;
+
     pub fn inc_save_slot(&mut self) {
-        self.current_save_slot = core::move_next_wrapped(self.current_save_slot, 99);
+        self.current_save_slot =
+            core::move_next_wrapped(self.current_save_slot, Self::MAX_SAVE_SLOT);
     }
 
     pub fn dec_save_slot(&mut self) {
-        self.current_save_slot = core::move_prev_wrapped(self.current_save_slot, 99);
+        self.current_save_slot =
+            core::move_prev_wrapped(self.current_save_slot, Self::MAX_SAVE_SLOT);
     }
 
     pub fn inc_load_slot(&mut self) {
-        self.current_load_slot = core::move_next_wrapped(self.current_load_slot, 99);
+        self.current_load_slot =
+            core::move_next_wrapped(self.current_load_slot, Self::MAX_SAVE_SLOT);
     }
 
     pub fn dec_load_slot(&mut self) {
-        self.current_load_slot = core::move_prev_wrapped(self.current_load_slot, 99);
+        self.current_load_slot =
+            core::move_prev_wrapped(self.current_load_slot, Self::MAX_SAVE_SLOT);
     }
 }
 
@@ -151,7 +169,7 @@ fn default_latency_ms() -> u32 {
 }
 
 impl AudioConfig {
-    pub fn get_apu_config(&self) -> ApuConfig {
+    pub fn apu_config(&self) -> ApuConfig {
         let mut config = ApuConfig::new(self.buffer_size, self.volume);
         config.channel_mask = self.channel_mask;
 
@@ -188,7 +206,7 @@ pub struct InterfaceConfig {
 }
 
 impl InterfaceConfig {
-    pub fn get_palette_colors(&self, palettes: &[LcdPalette]) -> [PixelColor; 4] {
+    pub fn palette_colors(&self, palettes: &[LcdPalette]) -> [PixelColor; 4] {
         let idx = self.selected_palette_idx;
 
         let mut colors = core::into_pixel_colors(&palettes[idx].hex_colors);
@@ -202,6 +220,43 @@ impl InterfaceConfig {
 }
 
 impl AppConfig {
+    /// The stored config, or a fresh one written to disk. A file that will not parse
+    /// is kept as `.bak` rather than overwritten: it is the user's, and whatever they
+    /// hand-edited into it is worth more than our defaults.
+    pub fn load_or_create() -> Self {
+        let path = Self::default_path();
+
+        if !path.exists() {
+            return Self::save_default();
+        }
+
+        match Self::from_file(&path) {
+            Ok(config) => config,
+            Err(err) => {
+                log::error!("Failed to parse config file: {err}");
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                let backup = path.with_file_name(format!("{name}.bak"));
+
+                match fs::rename(&path, &backup) {
+                    Ok(()) => log::error!("Renamed invalid config to {backup:?}"),
+                    Err(err) => log::error!("Failed to rename invalid config file: {err}"),
+                }
+
+                Self::save_default()
+            }
+        }
+    }
+
+    fn save_default() -> Self {
+        let config = Self::default();
+
+        if let Err(err) = config.save_file() {
+            panic!("Failed to save default config: {err}");
+        }
+
+        config
+    }
+
     pub fn from_file(path: &Path) -> io::Result<Self> {
         let data = fs::read_to_string(path)?;
         let config: Self = serde_json::from_str(&data)?;
@@ -219,7 +274,7 @@ impl AppConfig {
     }
 
     pub fn default_path() -> PathBuf {
-        get_base_dir().join("config.json")
+        base_dir().join("config.json")
     }
 }
 
@@ -248,6 +303,7 @@ impl Default for AppConfig {
                 channel_mask: apu_config.channel_mask,
             },
             input: InputConfig::default(),
+            library_sort: LibrarySort::default(),
             video: VideoConfig {
                 interface: InterfaceConfig {
                     selected_palette_idx: 0,
