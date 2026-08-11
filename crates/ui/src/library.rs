@@ -8,12 +8,13 @@ use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::theme::{self, ROW_PAD, WIDTH_SHEET};
 use egui::{Rect, Sense, Ui, Vec2};
+use std::sync::Arc;
 
 /// Read-model the platform fills in; the screen never reaches into app state.
 pub struct LibraryView<'a> {
     pub entries: &'a [RomEntry],
-    /// Bumped every time the platform rebuilds this view, which is the signal to
-    /// throw away textures uploaded from the covers it replaced.
+    /// Bumped when a position takes a different cover, which is the signal to throw
+    /// away the textures uploaded from the ones it replaced.
     pub version: u64,
     /// The order the entries are already in, which the sort sheet opens on.
     pub sort: SortBy,
@@ -22,8 +23,9 @@ pub struct LibraryView<'a> {
 pub struct RomEntry {
     pub title: String,
     pub kind: CartKind,
-    /// Cover art for the cart's label, when the game has any.
-    pub cover: Option<RgbImage>,
+    /// Cover art for the cart's label, when the game has any. Shared, so a rebuilt
+    /// shelf holds the pixels the platform already had rather than a copy.
+    pub cover: Option<Arc<RgbImage>>,
 }
 
 /// What the cart's own sheet offers. Playing it is Confirm on the shelf, so it is

@@ -2,7 +2,7 @@
 //! one writes the config, tells the video layer, and says so on screen.
 
 use crate::app::App;
-use crate::frontend::Frontend;
+use crate::frontend::{Frontend, UiUpdate};
 use crate::video::shader::{next_shader_by_name, prev_shader_by_name};
 use crate::{PlatformFileDialog, PlatformFileSystem};
 use core::emu::config::GbModel;
@@ -76,7 +76,7 @@ where
         self.video.overlay.text_color = colors[0];
         self.video.overlay.bg_color = colors[3];
         self.apply_dmg_palette(emu, colors);
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::Settings);
 
         let suffix = if self.config.video.interface.is_palette_inverted {
             " (inv)"
@@ -100,7 +100,7 @@ where
     pub fn update_shader(&mut self, name: impl Into<String>) {
         self.config.video.render.gl.shader_name = name.into();
         self.video.update_config(&self.config.video);
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::Settings);
         self.notifications.add(format!(
             "Shader: {}",
             self.config.video.render.gl.shader_name

@@ -5,7 +5,7 @@
 pub mod menu;
 
 use crate::cmd::AppCmd;
-use crate::frontend::{Capture, Frontend, FrontendCtx, NavAction};
+use crate::frontend::{Capture, Frontend, FrontendCtx, NavAction, UiUpdate};
 use crate::input::bindings::BindableInput;
 use crate::library::RomsState;
 use crate::video::AppVideo;
@@ -71,8 +71,10 @@ impl Frontend for RetroFrontend {
         }
     }
 
+    /// Every screen of it is one buffer of text, so there is nothing to rebuild
+    /// short of all of it — the overlay included, which paints over that buffer.
     #[inline(always)]
-    fn request_update(&mut self) {
+    fn request_update(&mut self, _what: UiUpdate) {
         self.menu.request_update();
     }
 

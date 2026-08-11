@@ -1,7 +1,7 @@
 //! Drawing one frame, of the game or of the menu over it.
 
 use crate::app::App;
-use crate::frontend::{Frontend, FrontendCtx};
+use crate::frontend::{Frontend, FrontendCtx, UiUpdate};
 use crate::{PlatformFileDialog, PlatformFileSystem};
 use core::emu::Emu;
 use core::ppu::framebuffer::FrameBuffer;
@@ -81,7 +81,11 @@ where
 
         // What the frame cost comes off its period, so a slow frame stretches the
         // period instead of the wait being added on top of it.
-        thread::sleep(self.frontend.frame_period().saturating_sub(started.elapsed()));
+        thread::sleep(
+            self.frontend
+                .frame_period()
+                .saturating_sub(started.elapsed()),
+        );
     }
 
     #[inline(always)]
@@ -90,7 +94,7 @@ where
         self.video.overlay.fill_notif(fb, lines);
 
         if updated {
-            self.frontend.request_update();
+            self.frontend.request_update(UiUpdate::Overlay);
         }
     }
 }
