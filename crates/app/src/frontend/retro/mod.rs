@@ -15,7 +15,7 @@ use menu::AppMenu;
 use std::time::Duration;
 
 /// The menu redraws only on change, so idling between frames costs nothing.
-const FRAME_DELAY: Duration = Duration::from_millis(30);
+const FRAME_PERIOD: Duration = Duration::from_millis(30);
 
 pub struct RetroFrontend {
     menu: AppMenu,
@@ -101,7 +101,7 @@ impl Frontend for RetroFrontend {
     }
 
     #[inline(always)]
-    fn frame_delay(&self) -> Duration {
-        FRAME_DELAY
+    fn frame_period(&self) -> Duration {
+        FRAME_PERIOD
     }
 }

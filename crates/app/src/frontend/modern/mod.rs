@@ -24,7 +24,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Cap on egui's own repaint delay, so input keeps being polled while it idles.
-const MAX_FRAME_DELAY: Duration = Duration::from_millis(30);
+const MAX_FRAME_PERIOD: Duration = Duration::from_millis(30);
+
+/// Floor under it. egui asks for an immediate repaint for as long as anything
+/// animates and no backend enables vsync, so unpaced the menu loop spins as fast as
+/// it can tessellate and present.
+const MENU_FRAME_RATE: u64 = 60;
+const MIN_FRAME_PERIOD: Duration = Duration::from_nanos(1_000_000_000 / MENU_FRAME_RATE);
 
 /// The brand logo the splash shows, built into the binary rather than read at runtime.
 /// Rasterized from `media/logo.svg` with its plate rounding dropped: the splash sets it
@@ -59,7 +65,7 @@ pub struct ModernFrontend {
     /// Filled by pointer input during `render`, drained by the app afterwards.
     pending: VecDeque<AppCmd>,
     stale: bool,
-    frame_delay: Duration,
+    frame_period: Duration,
 }
 
 /// Everything the screens read, rebuilt by [`ModernFrontend::refresh`] and handed
@@ -224,11 +230,13 @@ impl Frontend for ModernFrontend {
             }
         }
 
-        self.frame_delay = video.ui_frame_delay().min(MAX_FRAME_DELAY);
+        self.frame_period = video
+            .ui_frame_delay()
+            .clamp(MIN_FRAME_PERIOD, MAX_FRAME_PERIOD);
     }
 
-    fn frame_delay(&self) -> Duration {
-        self.frame_delay
+    fn frame_period(&self) -> Duration {
+        self.frame_period
     }
 }
 

@@ -118,6 +118,7 @@ pub trait Frontend {
         ctx: FrontendCtx<'_, FS>,
     );
 
-    /// How long to idle after a frame while the UI is open.
-    fn frame_delay(&self) -> Duration;
+    /// How long a menu frame is given, the idle after it included: the app sleeps
+    /// out whatever the frame itself did not spend.
+    fn frame_period(&self) -> Duration;
 }

@@ -7,6 +7,7 @@ use core::emu::Emu;
 use core::ppu::framebuffer::FrameBuffer;
 use std::fmt::Write;
 use std::thread;
+use std::time::Instant;
 
 impl<FS, FD> App<FS, FD>
 where
@@ -62,6 +63,7 @@ where
 
     #[inline(always)]
     pub fn render_menu(&mut self, emu: &mut Emu) {
+        let started = Instant::now();
         emu.runtime.cpu.clock.reset();
         let fb = emu.get_framebuffer();
         self.frontend.render(
@@ -77,7 +79,9 @@ where
         self.update_notif(fb);
         self.video.render();
 
-        thread::sleep(self.frontend.frame_delay());
+        // What the frame cost comes off its period, so a slow frame stretches the
+        // period instead of the wait being added on top of it.
+        thread::sleep(self.frontend.frame_period().saturating_sub(started.elapsed()));
     }
 
     #[inline(always)]
