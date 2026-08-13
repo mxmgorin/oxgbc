@@ -77,6 +77,13 @@ impl InputHandler {
         FD: PlatformFileDialog,
     {
         while let Some(event) = self.event_pump.poll_event() {
+            // Anything arriving while the menu is up can change what it shows, the
+            // pointer and window events egui takes for itself below included — no
+            // event, no frame.
+            if app.state == AppState::Paused {
+                app.frontend.request_render();
+            }
+
             // egui tracks window size and focus even while the game runs, but
             // only owns the input while its UI is up.
             #[cfg(feature = "frontend-modern")]

@@ -61,23 +61,32 @@ where
         self.video.render();
     }
 
+    /// One turn of the menu loop. The frame is built and presented only when it would
+    /// differ from the one on screen — an idle menu leaves the last frame standing and
+    /// costs the sleep alone — while the period is slept out either way, so input keeps
+    /// being polled at the same rate.
     #[inline(always)]
     pub fn render_menu(&mut self, emu: &mut Emu) {
         let started = Instant::now();
         emu.runtime.cpu.clock.reset();
         let fb = emu.get_framebuffer();
-        self.frontend.render(
-            &mut self.video,
-            fb,
-            FrontendCtx {
-                config: &self.config,
-                fs: &self.platform.fs,
-                roms: &self.roms,
-                palettes: &self.palettes,
-            },
-        );
+        // Ages the lines out on a clock of its own, so it runs whether or not a frame
+        // is drawn: a notification going away is itself a reason to draw one.
         self.update_notif(fb);
-        self.video.render();
+
+        if self.frontend.needs_render() {
+            self.frontend.render(
+                &mut self.video,
+                fb,
+                FrontendCtx {
+                    config: &self.config,
+                    fs: &self.platform.fs,
+                    roms: &self.roms,
+                    palettes: &self.palettes,
+                },
+            );
+            self.video.render();
+        }
 
         // What the frame cost comes off its period, so a slow frame stretches the
         // period instead of the wait being added on top of it.

@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Cap on egui's own repaint delay, so input keeps being polled while it idles.
 const MAX_FRAME_PERIOD: Duration = Duration::from_millis(30);
@@ -67,6 +67,12 @@ pub struct ModernFrontend {
     /// Filled by pointer input during `render`, drained by the app afterwards.
     pending: VecDeque<AppCmd>,
     stale: Stale,
+    /// Something the UI shows moved with no view behind it to rebuild — a nav, an
+    /// input egui read itself, a notification. Cleared by the frame that draws it.
+    unpainted: bool,
+    /// When egui asked to be run again, `None` while it wants nothing: the animations
+    /// and the delayed repaints it keeps time of on its own.
+    repaint_at: Option<Instant>,
     /// What the shelf was built from last time, so a rebuild reads only what moved.
     cards: CardCache,
     frame_period: Duration,
@@ -86,6 +92,11 @@ impl Stale {
         settings: true,
         states: true,
     };
+
+    /// A view still to be rebuilt is also a frame still to be drawn.
+    fn any(self) -> bool {
+        self.library || self.settings || self.states
+    }
 }
 
 /// Everything the screens read, rebuilt by [`ModernFrontend::refresh`] and handed
@@ -153,6 +164,7 @@ impl Frontend for ModernFrontend {
         self.walk_target = target;
         self.walk = browse::start(&self.walk_target, last.as_deref().or(from));
         self.views.browse = browse::view(self.walk.as_ref(), &self.walk_target);
+        self.unpainted = true;
         self.menu.open_browse();
     }
 
@@ -162,6 +174,8 @@ impl Frontend for ModernFrontend {
         ctx: FrontendCtx<'_, FS>,
     ) -> Option<AppCmd> {
         self.refresh(&ctx);
+        // Selection and focus live in the menu, which no staleness flag covers.
+        self.unpainted = true;
         let views = self.views.ui(into_sort(ctx.config.library_sort));
         let cmd = self.menu.nav(into_nav(action), &views)?;
 
@@ -203,6 +217,9 @@ impl Frontend for ModernFrontend {
     }
 
     fn request_update(&mut self, what: UiUpdate) {
+        // Even an update no view is built from still has to reach the screen.
+        self.unpainted = true;
+
         match what {
             UiUpdate::Library => self.stale.library = true,
             UiUpdate::Settings => self.stale.settings = true,
@@ -213,11 +230,21 @@ impl Frontend for ModernFrontend {
         }
     }
 
+    fn request_render(&mut self) {
+        self.unpainted = true;
+    }
+
+    fn needs_render(&self) -> bool {
+        self.unpainted || self.stale.any() || self.repaint_at.is_some_and(|at| at <= Instant::now())
+    }
+
     fn open(&mut self, has_game: bool) {
+        self.unpainted = true;
         self.menu.open(has_game);
     }
 
     fn start(&mut self, has_game: bool) {
+        self.unpainted = true;
         self.menu.start(has_game);
     }
 
@@ -237,6 +264,9 @@ impl Frontend for ModernFrontend {
         ctx: FrontendCtx<'_, FS>,
     ) {
         let splash = self.menu.on_splash();
+        // Cleared before the frame is built, so whatever the frame itself moves —
+        // pointer input reaching a view, a command it produces — stands for the next.
+        self.unpainted = false;
 
         if self.splash_drawn || !splash {
             self.refresh(&ctx);
@@ -258,9 +288,11 @@ impl Frontend for ModernFrontend {
             }
         }
 
-        self.frame_period = video
-            .ui_frame_delay()
-            .clamp(MIN_FRAME_PERIOD, MAX_FRAME_PERIOD);
+        let delay = video.ui_frame_delay();
+        self.frame_period = delay.clamp(MIN_FRAME_PERIOD, MAX_FRAME_PERIOD);
+        // egui reports `Duration::MAX` while nothing animates, which no instant can
+        // hold: nothing to come back for until something else moves the UI.
+        self.repaint_at = Instant::now().checked_add(delay);
     }
 
     fn frame_period(&self) -> Duration {
@@ -774,6 +806,17 @@ mod tests {
             kind: ui::CartKind::Dmg,
             cover,
         }
+    }
+
+    /// The trap of skipping idle frames: an overlay line rebuilds no view, and asking
+    /// the views alone would leave it off the screen for as long as the menu sits still.
+    #[test]
+    fn an_update_no_view_is_built_from_still_asks_for_a_frame() {
+        let mut frontend = ModernFrontend::default();
+        assert!(!frontend.needs_render());
+
+        frontend.request_update(UiUpdate::Overlay);
+        assert!(frontend.needs_render());
     }
 
     /// The cache hands a rebuild the pixels it already had, which is what lets the

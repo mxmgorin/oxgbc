@@ -58,6 +58,11 @@ impl AppMenu {
         self.updated = true;
     }
 
+    #[inline(always)]
+    pub fn needs_update(&self) -> bool {
+        self.updated
+    }
+
     pub fn items(&mut self, config: &AppConfig, roms: &RomsState) -> (&[&str], bool) {
         let updated = self.updated;
         self.updated = false;

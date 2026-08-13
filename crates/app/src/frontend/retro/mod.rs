@@ -78,6 +78,18 @@ impl Frontend for RetroFrontend {
         self.menu.request_update();
     }
 
+    /// Nothing here reads the pointer or the window: every input this menu acts on is
+    /// handed to it through `nav` or `capture_bind`, which mark it themselves.
+    #[inline(always)]
+    fn request_render(&mut self) {}
+
+    /// Its screen is one buffer of text, so the frame to draw is exactly the one whose
+    /// lines were rebuilt.
+    #[inline(always)]
+    fn needs_render(&self) -> bool {
+        self.menu.needs_update()
+    }
+
     /// The text menu always opens at its root, game or not.
     fn open(&mut self, _has_game: bool) {}
 

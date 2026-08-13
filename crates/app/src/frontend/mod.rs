@@ -112,6 +112,16 @@ pub trait Frontend {
     /// Mark the UI dirty — app state it displays changed underneath it.
     fn request_update(&mut self, what: UiUpdate);
 
+    /// Mark the UI as worth drawing again for a reason no other call on this seam
+    /// reports: an input the UI reads by itself — the pointer, the wheel, the window
+    /// — none of which arrive through [`Self::nav`].
+    fn request_render(&mut self);
+
+    /// Whether a menu frame drawn now would differ from the one already on screen.
+    /// The app skips building and presenting the frame when it would not, so an idle
+    /// menu costs a poll and a sleep.
+    fn needs_render(&self) -> bool;
+
     /// Called when the UI opens; `has_game` decides whether it is a pause menu
     /// over a running game or the app's home screen.
     fn open(&mut self, has_game: bool);
