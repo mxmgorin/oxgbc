@@ -47,6 +47,11 @@ impl TextureCache {
         self.evict_oldest();
     }
 
+    /// Drops what is uploaded, for pictures that will not be drawn again.
+    pub(crate) fn clear(&mut self) {
+        self.textures.clear();
+    }
+
     pub(crate) fn texture(&mut self, ui: &Ui, key: usize, image: &RgbImage) -> &TextureHandle {
         let frame = self.frame;
         let cached = self.textures.entry(key).or_insert_with(|| Cached {

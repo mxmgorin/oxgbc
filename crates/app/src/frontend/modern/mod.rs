@@ -149,10 +149,6 @@ impl Frontend for ModernFrontend {
     fn new(_roms: &RomsState) -> Self {
         Self {
             stale: Stale::ALL,
-            views: ViewData {
-                logo: logo(),
-                ..Default::default()
-            },
             ..Default::default()
         }
     }
@@ -245,6 +241,9 @@ impl Frontend for ModernFrontend {
 
     fn start(&mut self, has_game: bool) {
         self.unpainted = true;
+        // Decoded for the splash this opens on, and dropped again by the frame that
+        // follows it: no other screen shows the asset.
+        self.views.logo = logo();
         self.menu.start(has_game);
     }
 
@@ -275,6 +274,12 @@ impl Frontend for ModernFrontend {
         }
 
         self.splash_drawn |= splash;
+
+        // Once it is off, the pixels behind it have been drawn for the last time.
+        if !splash {
+            self.views.logo = None;
+        }
+
         video.draw_backdrop(fb);
 
         let views = self.views.ui(into_sort(ctx.config.library_sort));
