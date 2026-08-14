@@ -1,5 +1,5 @@
 use crate::{
-    config::{LibrarySort, VideoConfig},
+    config::{LibraryLayout, LibrarySort, VideoConfig},
     input::bindings::{BindableInput, InputIndex, InputKind},
 };
 use core::{
@@ -215,6 +215,7 @@ pub enum ChangeConfigCmd {
     SetGbModel(Option<GbModel>),
     TargetFps(f32),
     LibrarySort(LibrarySort),
+    LibraryLayout(LibraryLayout),
 }
 
 impl ChangeConfigCmd {
@@ -253,6 +254,7 @@ impl ChangeConfigCmd {
             ChangeConfigCmd::SetGbModel(_) => "Model",
             ChangeConfigCmd::TargetFps(_) => "Target Fps",
             ChangeConfigCmd::LibrarySort(_) => "Library Sort",
+            ChangeConfigCmd::LibraryLayout(_) => "Library Layout",
         }
     }
 }

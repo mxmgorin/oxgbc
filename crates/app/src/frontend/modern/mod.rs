@@ -7,7 +7,7 @@ mod settings;
 mod states;
 
 use crate::cmd::{AppCmd, ChangeConfigCmd};
-use crate::config::{AppConfig, LibrarySort};
+use crate::config::{AppConfig, LibraryLayout, LibrarySort};
 use crate::frontend::{BrowseTarget, Capture, Frontend, FrontendCtx, NavAction, UiUpdate};
 use crate::input::bindings::BindableInput;
 use crate::library::cover;
@@ -124,14 +124,16 @@ struct ViewData {
 }
 
 impl ViewData {
-    /// The borrowed form the `ui` crate reads. `sort` comes from the config rather
-    /// than from here: it is the app's setting, not a view this side builds.
-    fn ui(&self, sort: ui::SortBy) -> ui::Views<'_> {
+    /// The borrowed form the `ui` crate reads. `sort` and `layout` come from the
+    /// config rather than from here: they are the app's settings, not views this side
+    /// builds.
+    fn ui(&self, sort: ui::SortBy, layout: ui::LibraryLayout) -> ui::Views<'_> {
         ui::Views {
             library: ui::LibraryView {
                 entries: &self.entries,
                 version: self.library_version,
                 sort,
+                layout,
             },
             playing: &self.playing,
             logo: self.logo.as_ref(),
@@ -172,7 +174,10 @@ impl Frontend for ModernFrontend {
         self.refresh(&ctx);
         // Selection and focus live in the menu, which no staleness flag covers.
         self.unpainted = true;
-        let views = self.views.ui(into_sort(ctx.config.library_sort));
+        let views = self.views.ui(
+            into_sort(ctx.config.library_sort),
+            into_layout(ctx.config.library_layout),
+        );
         let cmd = self.menu.nav(into_nav(action), &views)?;
 
         self.app_cmd(cmd, ctx.config)
@@ -282,7 +287,10 @@ impl Frontend for ModernFrontend {
 
         video.draw_backdrop(fb);
 
-        let views = self.views.ui(into_sort(ctx.config.library_sort));
+        let views = self.views.ui(
+            into_sort(ctx.config.library_sort),
+            into_layout(ctx.config.library_layout),
+        );
         let menu = &mut self.menu;
         let mut cmds = Vec::new();
         video.draw_ui(&mut |root| menu.show(root, &views, &mut cmds));
@@ -508,6 +516,9 @@ impl ModernFrontend {
             ui::UiCmd::SortLibrary(sort) => {
                 AppCmd::ChangeConfig(ChangeConfigCmd::LibrarySort(from_sort(sort)))
             }
+            ui::UiCmd::SetLibraryLayout(layout) => {
+                AppCmd::ChangeConfig(ChangeConfigCmd::LibraryLayout(from_layout(layout)))
+            }
             ui::UiCmd::BrowseEnter(index) => return self.browse_enter(index),
             ui::UiCmd::BrowseChooseDir => {
                 let dir = self.walk.as_ref()?.current_dir.clone();
@@ -547,6 +558,7 @@ struct Card {
 
 fn card_of(roms: &RomsState, path: PathBuf, name: &str, cached: &CachedCard) -> Card {
     let title = title_of(&path, &cached.meta);
+    let playtime_secs = roms.playtime(name);
 
     Card {
         name_key: title.to_lowercase(),
@@ -554,8 +566,9 @@ fn card_of(roms: &RomsState, path: PathBuf, name: &str, cached: &CachedCard) -> 
             title,
             kind: kind_of(cached.meta.cgb),
             cover: cached.cover.clone(),
+            played: states::played(playtime_secs),
         },
-        playtime_secs: roms.playtime(name),
+        playtime_secs,
         path,
     }
 }
@@ -773,6 +786,22 @@ fn into_sort(sort: LibrarySort) -> ui::SortBy {
     }
 }
 
+fn into_layout(layout: LibraryLayout) -> ui::LibraryLayout {
+    match layout {
+        LibraryLayout::Shelf => ui::LibraryLayout::Shelf,
+        LibraryLayout::List => ui::LibraryLayout::List,
+        LibraryLayout::Carousel => ui::LibraryLayout::Carousel,
+    }
+}
+
+fn from_layout(layout: ui::LibraryLayout) -> LibraryLayout {
+    match layout {
+        ui::LibraryLayout::Shelf => LibraryLayout::Shelf,
+        ui::LibraryLayout::List => LibraryLayout::List,
+        ui::LibraryLayout::Carousel => LibraryLayout::Carousel,
+    }
+}
+
 fn from_sort(sort: ui::SortBy) -> LibrarySort {
     match sort {
         ui::SortBy::Recent => LibrarySort::Recent,
@@ -810,6 +839,7 @@ mod tests {
             title: String::new(),
             kind: ui::CartKind::Dmg,
             cover,
+            played: String::new(),
         }
     }
 

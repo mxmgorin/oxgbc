@@ -67,6 +67,8 @@ pub const ROW_HEIGHT: f32 = UNIT * 8.0;
 pub const SETTINGS_ROW_HEIGHT: f32 = UNIT * 7.0;
 /// A row with a thumbnail in it.
 pub const THUMB_ROW_HEIGHT: f32 = UNIT * 12.0;
+/// How far the thumbnail is inset from the row's top and bottom.
+pub const THUMB_PAD: f32 = UNIT;
 pub const ROW_GAP: f32 = UNIT * 1.5;
 /// A row's text inset from its edge.
 pub const ROW_PAD: f32 = UNIT * 2.0;

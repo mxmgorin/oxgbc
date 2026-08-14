@@ -110,9 +110,9 @@ fn written_at(game: &str, slot: usize) -> Option<SystemTime> {
     path.metadata().ok()?.modified().ok()
 }
 
-/// How long the game had been played when the state was written. Empty until
-/// there is a minute of it, so a fresh game's states aren't captioned "0 min".
-fn played(secs: u64) -> String {
+/// Play time as words, for a state's own and for a cart's on the library list.
+/// Empty until there is a minute of it, so nothing fresh is captioned "0 min".
+pub(super) fn played(secs: u64) -> String {
     if secs < MINUTE {
         String::new()
     } else if secs < HOUR {

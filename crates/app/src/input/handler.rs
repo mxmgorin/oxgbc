@@ -427,6 +427,11 @@ impl InputHandler {
                         app.config.library_sort = sort;
                         app.frontend.request_update(UiUpdate::Library);
                     }
+                    // Only how the shelf is drawn, so nothing is rebuilt; the staleness
+                    // below is what asks for the frame.
+                    ChangeConfigCmd::LibraryLayout(layout) => {
+                        app.config.library_layout = layout;
+                    }
                     ChangeConfigCmd::TargetFps(x) => {
                         app.config.video.render.target_fps = x;
                         app.video.update_config(&app.config.video);

@@ -28,6 +28,8 @@ pub struct AppConfig {
     pub input: InputConfig,
     #[serde(default)]
     pub library_sort: LibrarySort,
+    #[serde(default)]
+    pub library_layout: LibraryLayout,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Default)]
@@ -36,6 +38,19 @@ pub enum LibrarySort {
     Recent,
     Name,
     Playtime,
+}
+
+/// How the library screen lays its games out. Mirrored in the `ui` crate, which draws
+/// them and owns the order the button walks; this side only keeps the choice.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Default)]
+pub enum LibraryLayout {
+    /// Cartridge tiles across the screen.
+    #[default]
+    Shelf,
+    /// One game per row.
+    List,
+    /// One cart in front, its neighbours standing back on either side.
+    Carousel,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
@@ -304,6 +319,7 @@ impl Default for AppConfig {
             },
             input: InputConfig::default(),
             library_sort: LibrarySort::default(),
+            library_layout: LibraryLayout::default(),
             video: VideoConfig {
                 interface: InterfaceConfig {
                     selected_palette_idx: 0,
