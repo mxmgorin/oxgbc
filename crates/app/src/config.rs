@@ -28,6 +28,8 @@ pub struct AppConfig {
     pub input: InputConfig,
     #[serde(default)]
     pub library_sort: LibrarySort,
+    #[serde(default)]
+    pub library_layout: LibraryLayout,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Default)]
@@ -36,6 +38,27 @@ pub enum LibrarySort {
     Recent,
     Name,
     Playtime,
+}
+
+/// How the library screen lays its games out. Mirrored in the `ui` crate, which
+/// draws both; this is the side that keeps the choice between runs.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Default)]
+pub enum LibraryLayout {
+    /// Cartridge tiles across the screen.
+    #[default]
+    Shelf,
+    /// One game per row.
+    List,
+}
+
+impl LibraryLayout {
+    /// The other one, which is all the library's layout button ever asks for.
+    pub fn flipped(self) -> Self {
+        match self {
+            LibraryLayout::Shelf => LibraryLayout::List,
+            LibraryLayout::List => LibraryLayout::Shelf,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
@@ -304,6 +327,7 @@ impl Default for AppConfig {
             },
             input: InputConfig::default(),
             library_sort: LibrarySort::default(),
+            library_layout: LibraryLayout::default(),
             video: VideoConfig {
                 interface: InterfaceConfig {
                     selected_palette_idx: 0,

@@ -9,7 +9,7 @@ use crate::menu::UiCmd;
 use crate::nav::GridFocus;
 use crate::overlay;
 use crate::theme::{
-    self, ROW_GAP, ROW_HEIGHT, ROW_PAD, THUMB_ROW_HEIGHT, WIDTH_PANEL, WIDTH_SHEET,
+    self, ROW_GAP, ROW_HEIGHT, ROW_PAD, THUMB_PAD, THUMB_ROW_HEIGHT, WIDTH_PANEL, WIDTH_SHEET,
 };
 use egui::{Align2, Rect, ScrollArea, Sense, Ui, Vec2};
 
@@ -81,7 +81,6 @@ const ACTIONS: [(&str, SlotAction); 5] = [
 /// the window's height.
 const SHOT_MAX_SCALE: f32 = 2.0;
 const SHOT_MAX_SCREEN: f32 = 0.4;
-const THUMB_PAD: f32 = theme::UNIT;
 /// Rows shown before the list starts scrolling.
 const MAX_ROWS: usize = 6;
 /// Room reserved for one line of title, which sits outside the row list.

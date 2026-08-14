@@ -215,6 +215,9 @@ pub enum ChangeConfigCmd {
     SetGbModel(Option<GbModel>),
     TargetFps(f32),
     LibrarySort(LibrarySort),
+    /// Lay the library out the other way: there are two, so the flip needs no
+    /// payload.
+    ToggleLibraryLayout,
 }
 
 impl ChangeConfigCmd {
@@ -253,6 +256,7 @@ impl ChangeConfigCmd {
             ChangeConfigCmd::SetGbModel(_) => "Model",
             ChangeConfigCmd::TargetFps(_) => "Target Fps",
             ChangeConfigCmd::LibrarySort(_) => "Library Sort",
+            ChangeConfigCmd::ToggleLibraryLayout => "Library Layout",
         }
     }
 }

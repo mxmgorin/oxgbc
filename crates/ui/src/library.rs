@@ -1,13 +1,16 @@
-//! The library screen: the game collection as a shelf of cartridges, and what can
-//! be done with one besides playing it.
+//! The library screen: the game collection as a shelf of cartridges or as a list of
+//! rows, and what can be done with one game besides playing it.
+//!
+//! Both layouts are the same library under one focus model and one texture cache;
+//! which of the two is drawn is a setting the platform keeps.
 
 use crate::cart::{self, CartKind};
 use crate::image::{RgbImage, TextureCache};
 use crate::menu::UiCmd;
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
-use crate::theme::{self, ROW_PAD, WIDTH_SHEET};
-use egui::{Rect, Sense, Ui, Vec2};
+use crate::theme::{self, ROW_GAP, ROW_PAD, THUMB_PAD, THUMB_ROW_HEIGHT, WIDTH_SHEET};
+use egui::{Align2, Rect, Sense, Ui, Vec2};
 use std::sync::Arc;
 
 /// Read-model the platform fills in; the screen never reaches into app state.
@@ -18,6 +21,9 @@ pub struct LibraryView<'a> {
     pub version: u64,
     /// The order the entries are already in, which the sort sheet opens on.
     pub sort: SortBy,
+    /// How the entries are laid out, which is also what the header's button offers
+    /// to switch away from.
+    pub layout: LibraryLayout,
 }
 
 pub struct RomEntry {
@@ -26,6 +32,23 @@ pub struct RomEntry {
     /// Cover art for the cart's label, when the game has any. Shared, so a rebuilt
     /// shelf holds the pixels the platform already had rather than a copy.
     pub cover: Option<Arc<RgbImage>>,
+    /// Platform-formatted play time behind the game, e.g. `"2 h 14 min played"`;
+    /// empty until there is a minute of it. Shown by the list, which has a column
+    /// to spare — a cart has nowhere to put it.
+    pub played: String,
+}
+
+/// The two ways the library reads. Mirrored on the platform side, which is what
+/// persists the choice; this crate only names them and asks for the switch.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+pub enum LibraryLayout {
+    /// Cartridges as tiles, as many across as the window fits.
+    #[default]
+    Shelf,
+    /// One game per row, its cart shrunk to a thumbnail beside the title. Fits far
+    /// more games on screen, and is the only layout that has room for a second
+    /// column of words.
+    List,
 }
 
 /// What the cart's own sheet offers. Playing it is Confirm on the shelf, so it is
@@ -77,16 +100,36 @@ pub enum LibraryEvent {
     Add,
     /// Open the sheet of orders the shelf can be read in.
     Sort,
+    /// Read the library in the other layout from now on.
+    ToggleLayout,
     OpenSettings,
 }
 
-/// The header, left to right. Icons alone: a gear and a plus need no caption, and
-/// the words are in the tooltip for whoever has a pointer.
-const HEADER: [(&str, &str, LibraryEvent); 3] = [
-    ("\u{2795}", "Add games", LibraryEvent::Add),
-    ("\u{21C5}", "Sort games", LibraryEvent::Sort),
-    ("\u{2699}", "Settings", LibraryEvent::OpenSettings),
+/// The header, left to right. What each button looks like is [`header_icon`]: one of
+/// them changes with the layout, so the faces cannot live in here.
+const HEADER: [LibraryEvent; 4] = [
+    LibraryEvent::Add,
+    LibraryEvent::Sort,
+    LibraryEvent::ToggleLayout,
+    LibraryEvent::OpenSettings,
 ];
+
+/// A button's glyph and the words behind it. Icons alone: a gear and a plus need no
+/// caption, and the words are in the tooltip for whoever has a pointer.
+///
+/// The layout button shows the layout it switches *to* rather than the one in force —
+/// what the button does is what it says.
+fn header_icon(event: LibraryEvent, layout: LibraryLayout) -> (&'static str, &'static str) {
+    match event {
+        LibraryEvent::Add => ("\u{2795}", "Add games"),
+        LibraryEvent::Sort => ("\u{21C5}", "Sort games"),
+        LibraryEvent::ToggleLayout => match layout {
+            LibraryLayout::Shelf => ("\u{25A4}", "List view"),
+            LibraryLayout::List => ("\u{25A6}", "Shelf view"),
+        },
+        LibraryEvent::OpenSettings => ("\u{2699}", "Settings"),
+    }
+}
 
 /// The orders the shelf can be read in. Mirrored on the platform side, which is
 /// what persists the choice; this crate only names them and reports the pick.
@@ -185,22 +228,25 @@ pub enum LibraryPick {
 /// header is a short row over a wide one, so the zones are kept apart and vertical
 /// movement hands the focus between them — otherwise nothing in the header could be
 /// reached without a pointer.
+///
+/// The games are one grid either way: the list is a shelf one column wide, so both
+/// layouts move the focus through the same model.
 #[derive(Default)]
 pub struct LibraryFocus {
     on_header: bool,
     header: GridFocus,
-    shelf: GridFocus,
+    games: GridFocus,
 }
 
 impl LibraryFocus {
-    /// The shelf reports the shape its layout produced; the header's never changes.
+    /// The layout reports the shape it produced; the header's never changes.
     pub fn sync(&mut self, entries: usize, columns: usize) {
         self.header.sync(HEADER.len(), HEADER.len());
-        self.shelf.sync(entries, columns);
+        self.games.sync(entries, columns);
 
-        // With nothing on the shelf the header is all there is, and adding a game
-        // is exactly what an empty library needs.
-        if self.shelf.is_empty() {
+        // With nothing in the library the header is all there is, and adding a game
+        // is exactly what an empty one needs.
+        if self.games.is_empty() {
             self.on_header = true;
         }
     }
@@ -211,39 +257,39 @@ impl LibraryFocus {
         }
 
         // Up out of the top row reaches the header rather than wrapping to the
-        // bottom of the shelf.
-        if action == NavAction::Up && self.shelf.on_top_row() {
+        // bottom of the library.
+        if action == NavAction::Up && self.games.on_top_row() {
             self.on_header = true;
 
             return None;
         }
 
-        match self.shelf.nav(action)? {
+        match self.games.nav(action)? {
             FocusEvent::Activate(index) => Some(LibraryPick::Rom(index)),
             FocusEvent::Back => Some(LibraryPick::Back),
         }
     }
 
     fn nav_header(&mut self, action: NavAction) -> Option<LibraryPick> {
-        // Either way out of the header is the shelf, which keeps the cart it was
+        // Either way out of the header is the library, which keeps the cart it was
         // left on.
         if matches!(action, NavAction::Up | NavAction::Down) {
-            self.on_header = self.shelf.is_empty();
+            self.on_header = self.games.is_empty();
 
             return None;
         }
 
         match self.header.nav(action)? {
-            FocusEvent::Activate(index) => HEADER
-                .get(index)
-                .map(|(_, _, event)| LibraryPick::Header(*event)),
+            FocusEvent::Activate(index) => {
+                HEADER.get(index).map(|event| LibraryPick::Header(*event))
+            }
             FocusEvent::Back => Some(LibraryPick::Back),
         }
     }
 
-    /// The cart the shelf is on, for the things that are about one cart.
+    /// The cart the library is on, for the things that are about one cart.
     pub fn rom(&self) -> Option<usize> {
-        (!self.on_header && !self.shelf.is_empty()).then(|| self.shelf.index())
+        (!self.on_header && !self.games.is_empty()).then(|| self.games.index())
     }
 
     /// Moves the focus to what the pointer is over, so the two never disagree.
@@ -252,9 +298,9 @@ impl LibraryFocus {
         self.header.focus(index);
     }
 
-    fn point_at_shelf(&mut self, index: usize) {
+    fn point_at_game(&mut self, index: usize) {
         self.on_header = false;
-        self.shelf.focus(index);
+        self.games.focus(index);
     }
 }
 
@@ -284,13 +330,14 @@ pub fn library(
                 .max_rect(band.shrink2(egui::vec2(ROW_PAD, 0.0)))
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
-        for (index, (glyph, hint, asked)) in HEADER.iter().enumerate().rev() {
+        for (index, asked) in HEADER.iter().enumerate().rev() {
             let focused = focus.on_header && focus.header.is_focused(index);
+            let (glyph, hint) = header_icon(*asked, view.layout);
             // Looked up in the monospace family, which starts at Hack: the arrows
-            // live there and nowhere in the proportional chain. The emoji glyphs
-            // are in neither font, so they fall through to the same emoji fonts as
-            // before and look no different.
-            let icon = egui::RichText::new(*glyph)
+            // and the two layout squares live there and nowhere in the proportional
+            // chain. The emoji glyphs are in neither font, so they fall through to
+            // the same emoji fonts as before and look no different.
+            let icon = egui::RichText::new(glyph)
                 .size(ICON_SIZE)
                 .family(egui::FontFamily::Monospace);
             let response = header.add(egui::Button::selectable(focused, icon));
@@ -299,7 +346,7 @@ pub fn library(
                 focus.point_at_header(index);
             }
 
-            if response.on_hover_text(*hint).clicked() {
+            if response.on_hover_text(hint).clicked() {
                 event = Some(*asked);
             }
         }
@@ -311,8 +358,9 @@ pub fn library(
             return;
         }
 
-        egui::ScrollArea::vertical().show_viewport(ui, |ui, viewport| {
-            shelf(ui, viewport, view, focus, covers, out)
+        egui::ScrollArea::vertical().show_viewport(ui, |ui, viewport| match view.layout {
+            LibraryLayout::Shelf => shelf(ui, viewport, view, focus, covers, out),
+            LibraryLayout::List => list(ui, viewport, view, focus, covers, out),
         });
     });
 
@@ -341,7 +389,7 @@ fn shelf(
     covers: &mut TextureCache,
     out: &mut Vec<UiCmd>,
 ) {
-    let follow_focus = focus.shelf.take_moved();
+    let follow_focus = focus.games.take_moved();
     let tile = Vec2::new(TILE_WIDTH, TILE_WIDTH * cart::ASPECT);
     // Every cell reserves what the focused cart needs, so growing one never
     // overflows the row — at the panel's edges that overflow is clipped away.
@@ -361,7 +409,7 @@ fn shelf(
     let full_width = columns as f32 * cell.x + (columns + 1) as f32 * gap;
     let leading = (shelf_width - full_width) * 0.5 + gap;
     focus.sync(view.entries.len(), columns);
-    let on_shelf = !focus.on_header;
+    let on_games = !focus.on_header;
 
     // What a row and its trailing gap took when every one of them was laid out in
     // turn: the spacing egui puts between items lands twice over, once after the row
@@ -379,7 +427,7 @@ fn shelf(
     // no rect of its own to scroll to. Its band is enough — the shelf only scrolls
     // vertically, and the band is where the cart would be.
     if follow_focus {
-        let row = focus.shelf.index() / columns;
+        let row = focus.games.index() / columns;
         let band = Rect::from_min_size(
             egui::pos2(ui.max_rect().left(), top + row as f32 * pitch),
             cell,
@@ -408,12 +456,12 @@ fn shelf(
                 for (column, entry) in entries.iter().enumerate() {
                     let index = row * columns + column;
                     let (rect, response) = ui.allocate_exact_size(cell, Sense::click());
-                    let focused = on_shelf && focus.shelf.is_focused(index);
+                    let focused = on_games && focus.games.is_focused(index);
 
                     // Pointer and directional input drive the same highlight, so the
                     // two never disagree about what is selected.
                     if response.hovered() {
-                        focus.point_at_shelf(index);
+                        focus.point_at_game(index);
                     }
 
                     if response.clicked() {
@@ -432,6 +480,138 @@ fn shelf(
             ui.add_space(MIN_GAP);
         }
     });
+}
+
+/// How much taller the cart on a list row is than the thumbnail a plain row holds.
+/// The cart is the point of the row — its cover art is what a library is read by — so
+/// it is drawn big enough to see and the row is sized from it, not the other way round.
+const LIST_CART_SCALE: f32 = 3.0;
+/// The cart, and the row it sets the height of. Inset by [`ROW_PAD`] on every side it
+/// has one — the same as its distance from the row's left edge, so a cart this large
+/// does not read as wedged into its row.
+const LIST_CART_HEIGHT: f32 = (THUMB_ROW_HEIGHT - THUMB_PAD * 2.0) * LIST_CART_SCALE;
+const LIST_ROW_HEIGHT: f32 = LIST_CART_HEIGHT + ROW_PAD * 2.0;
+
+/// One game per row: the cart, its title, and the play time behind it. Only the rows
+/// in view are built, for the same reasons the shelf does it — see [`shelf`].
+fn list(
+    ui: &mut Ui,
+    viewport: Rect,
+    view: &LibraryView,
+    focus: &mut LibraryFocus,
+    covers: &mut TextureCache,
+    out: &mut Vec<UiCmd>,
+) {
+    let follow_focus = focus.games.take_moved();
+    // One game per row, so the grid the focus moves through is a single column.
+    focus.sync(view.entries.len(), 1);
+    let on_games = !focus.on_header;
+    let pitch = LIST_ROW_HEIGHT + ui.spacing().item_spacing.y;
+    // The whole list's height, so the scrollbar spans the library rather than the
+    // few rows actually built.
+    ui.set_height(pitch * view.entries.len() as f32);
+    // Full width, so the rows line up with the header band over them and the play
+    // time sits at the same edge the window does.
+    let band_x = ui.max_rect().x_range();
+    let top = ui.max_rect().top();
+    let row_rect = |row: usize| {
+        Rect::from_x_y_ranges(
+            band_x,
+            top + row as f32 * pitch..=top + (row as f32 * pitch + LIST_ROW_HEIGHT),
+        )
+    };
+
+    // Directional input can walk the focus onto a row that was never built and so has
+    // no rect of its own to scroll to; where the row would be is enough.
+    if follow_focus {
+        ui.scroll_to_rect(row_rect(focus.games.index()), None);
+    }
+
+    let built = rows_in_view(viewport, pitch, view.entries.len());
+    let band = Rect::from_x_y_ranges(
+        band_x,
+        top + built.start as f32 * pitch..=top + built.end as f32 * pitch,
+    );
+
+    ui.scope_builder(egui::UiBuilder::new().max_rect(band), |ui| {
+        // Each row is a widget of its own, so the ids of the built ones are the ones
+        // they would have had with the whole list ahead of them.
+        ui.skip_ahead_auto_ids(built.start);
+
+        for index in built {
+            let entry = &view.entries[index];
+
+            if list_row(ui, entry, index, on_games, focus, covers) {
+                out.push(UiCmd::LaunchRom(index));
+            }
+        }
+    });
+}
+
+/// Returns whether the pointer clicked the row.
+fn list_row(
+    ui: &mut Ui,
+    entry: &RomEntry,
+    index: usize,
+    on_games: bool,
+    focus: &mut LibraryFocus,
+    covers: &mut TextureCache,
+) -> bool {
+    let focused = on_games && focus.games.is_focused(index);
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), LIST_ROW_HEIGHT),
+        Sense::click(),
+    );
+
+    // Pointer and directional input drive the same highlight, so the two never
+    // disagree about what is selected.
+    if response.hovered() {
+        focus.point_at_game(index);
+    }
+
+    let bloom = theme::paint_focus(ui, response.id, rect, focused);
+    let cover = entry
+        .cover
+        .as_ref()
+        .map(|cover| covers.texture(ui, index, cover).clone());
+    let cart = cart_rect(rect);
+    // The row says what the game is called, so the cart's own label is left blank
+    // rather than printing the title twice over.
+    cart::paint(ui, cart, "", entry.kind, false, cover.as_ref());
+
+    let mut text = rect.shrink2(Vec2::new(ROW_PAD, 0.0));
+    text.set_left(cart.right() + ROW_PAD);
+    // The play time goes down first, so the title knows how much room it was left
+    // and gets cut rather than running under it.
+    let played = theme::label(
+        ui,
+        text,
+        Align2::RIGHT_CENTER,
+        entry.played.as_str(),
+        theme::detail_color(ui, bloom),
+    );
+    let mut title = text;
+    title.set_right((text.right() - played - ROW_GAP).max(text.left()));
+    // Heading-sized: beside a cart this tall, a row's plain text would read as a
+    // caption rather than as the name of the thing.
+    theme::heading_at(
+        ui,
+        title,
+        Align2::LEFT_CENTER,
+        entry.title.as_str(),
+        theme::label_color(ui, bloom),
+    );
+
+    response.clicked()
+}
+
+/// The cart in the row's left end, at its own aspect: what [`ROW_PAD`] leaves of the
+/// row's height, which is [`LIST_CART_HEIGHT`] by construction.
+fn cart_rect(row: Rect) -> Rect {
+    let height = row.height() - ROW_PAD * 2.0;
+    let min = egui::pos2(row.left() + ROW_PAD, row.top() + ROW_PAD);
+
+    Rect::from_min_size(min, Vec2::new(height / cart::ASPECT, height))
 }
 
 #[cfg(test)]
@@ -511,8 +691,26 @@ mod tests {
         assert_eq!(focus.nav(NavAction::Right), None);
         assert_eq!(
             focus.nav(NavAction::Confirm),
+            Some(LibraryPick::Header(LibraryEvent::ToggleLayout))
+        );
+
+        assert_eq!(focus.nav(NavAction::Right), None);
+        assert_eq!(
+            focus.nav(NavAction::Confirm),
             Some(LibraryPick::Header(LibraryEvent::OpenSettings))
         );
+    }
+
+    /// The button offers whichever layout is not in force, so its face is the one
+    /// thing on the header that changes.
+    #[test]
+    fn the_layout_button_shows_the_layout_it_switches_to() {
+        let shelf = header_icon(LibraryEvent::ToggleLayout, LibraryLayout::Shelf);
+        let list = header_icon(LibraryEvent::ToggleLayout, LibraryLayout::List);
+
+        assert_eq!(shelf.1, "List view");
+        assert_eq!(list.1, "Shelf view");
+        assert_ne!(shelf.0, list.0, "and shows it with its own glyph");
     }
 
     /// Adding a game is the one thing an empty library needs, so it cannot be a
