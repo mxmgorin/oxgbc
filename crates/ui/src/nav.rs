@@ -65,6 +65,12 @@ impl GridFocus {
         std::mem::take(&mut self.moved)
     }
 
+    /// Asks the view to scroll the highlight into sight without moving it, for a screen
+    /// that hands the focus back to a grid scrolled away from it.
+    pub fn follow(&mut self) {
+        self.moved = true;
+    }
+
     /// Moves the highlight to a cell the pointer is over, keeping mixed
     /// mouse/gamepad input coherent.
     pub fn focus(&mut self, index: usize) {

@@ -283,10 +283,11 @@ impl LibraryFocus {
     }
 
     fn nav_header(&mut self, action: NavAction) -> Option<LibraryPick> {
-        // Either way out of the header is the library, which keeps the cart it was
-        // left on.
+        // Either way out of the header is the library, which keeps the cart it was left
+        // on — and scrolls back to it, since it can be off screen by now.
         if matches!(action, NavAction::Up | NavAction::Down) {
             self.on_header = self.games.is_empty();
+            self.games.follow();
 
             return None;
         }
@@ -926,6 +927,10 @@ mod tests {
 
         assert_eq!(focus.nav(NavAction::Down), None);
         assert_eq!(focus.rom(), Some(0), "and the shelf keeps its cart");
+        assert!(
+            focus.games.take_moved(),
+            "the cart it kept can be off screen, so the view has to scroll back to it"
+        );
     }
 
     #[test]
