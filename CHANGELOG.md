@@ -5,6 +5,29 @@ All notable changes to oxGBC are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple incrementing release number.
 
+## [0.22] - 2026-08-14
+
+### Added
+- **A new graphical frontend**, built on egui: a cartridge library with cover
+  art in shelf, list and carousel layouts, save-state slots with previews and
+  play time, settings pages with input rebinding and themes, an in-app file
+  browser, a pause overlay and an About page.
+
+### Changed
+- The graphical frontend is now the default; the text menu stays available
+  behind the `frontend-retro` feature.
+
+### Fixed
+- Cartridges are deduplicated by name instead of path.
+- Window tiling on the GL backend, and the shader program is now bound before
+  its uniforms are sent.
+
+### Performance
+- The menu is paced to 60 fps and repainted only on change: idle CPU 9.7% →
+  0.97% of a core.
+- Only the shelf rows on screen are built, with cards and textures cached:
+  frame −20–25%, RSS 191 → 159.5 MB.
+
 ## [0.21] - 2026-08-02
 
 ### Fixed
@@ -77,4 +100,6 @@ and this project adheres to a simple incrementing release number.
 - Timer: branchless TAC bit in the falling-edge detector.
 - PPU: dropped per-pixel bookkeeping on FIFO push.
 
+[0.22]: https://github.com/mxmgorin/oxgbc/releases/tag/0.22
+[0.21]: https://github.com/mxmgorin/oxgbc/releases/tag/0.21
 [0.20]: https://github.com/mxmgorin/oxgbc/releases/tag/0.20
