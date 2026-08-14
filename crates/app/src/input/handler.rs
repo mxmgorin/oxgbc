@@ -1,7 +1,7 @@
 use crate::app::{App, AppState};
 use crate::cmd::{AppCmd, BindTarget, ChangeConfigCmd};
 use crate::config::AppConfig;
-use crate::frontend::{BrowseTarget, Capture, Frontend};
+use crate::frontend::{BrowseTarget, Capture, Frontend, UiUpdate};
 use crate::input::bindings::{BindableInput, InputBindings, InputIndex, InputKind};
 use crate::input::emu::handle_emu_btn;
 use crate::input::gamepad::GamepadHandler;
@@ -77,6 +77,13 @@ impl InputHandler {
         FD: PlatformFileDialog,
     {
         while let Some(event) = self.event_pump.poll_event() {
+            // Anything arriving while the menu is up can change what it shows, the
+            // pointer and window events egui takes for itself below included — no
+            // event, no frame.
+            if app.state == AppState::Paused {
+                app.frontend.request_render();
+            }
+
             // egui tracks window size and focus even while the game runs, but
             // only owns the input while its UI is up.
             #[cfg(feature = "frontend-modern")]
@@ -214,7 +221,7 @@ impl InputHandler {
                     app.state = AppState::Paused;
                     app.frontend
                         .open(!emu.runtime.cpu.clock.bus.cart.is_empty());
-                    app.frontend.request_update();
+                    app.frontend.request_update(UiUpdate::All);
                 }
             }
             AppCmd::RestartRom => {
@@ -394,7 +401,6 @@ impl InputHandler {
                             "Save Slot: {}, Load Slot: {}",
                             app.config.current_save_slot, app.config.current_load_slot
                         ));
-                        app.frontend.request_update();
                     }
                     ChangeConfigCmd::DecSaveAndLoadSlots => {
                         app.config.dec_load_slot();
@@ -403,7 +409,6 @@ impl InputHandler {
                             "Save Slot: {}, Load Slot: {}",
                             app.config.current_save_slot, app.config.current_load_slot
                         ));
-                        app.frontend.request_update();
                     }
                     ChangeConfigCmd::NextShader => app.next_shader(),
                     ChangeConfigCmd::PrevShader => app.prev_shader(),
@@ -417,7 +422,11 @@ impl InputHandler {
                         emu.runtime.cpu.clock.bus.update_model(model);
                         app.refresh_dmg_palette(emu);
                     }
-                    ChangeConfigCmd::LibrarySort(sort) => app.config.library_sort = sort,
+                    // The shelf is built in the order it is sorted by.
+                    ChangeConfigCmd::LibrarySort(sort) => {
+                        app.config.library_sort = sort;
+                        app.frontend.request_update(UiUpdate::Library);
+                    }
                     ChangeConfigCmd::TargetFps(x) => {
                         app.config.video.render.target_fps = x;
                         app.video.update_config(&app.config.video);
@@ -425,7 +434,7 @@ impl InputHandler {
                 }
 
                 // Both UIs show config values, so any change makes the screen stale.
-                app.frontend.request_update();
+                app.frontend.request_update(UiUpdate::Settings);
             }
             AppCmd::ReleaseButton(btn) => {
                 if let Some(cmd) = handle_emu_btn(btn, false, app, emu) {
@@ -455,7 +464,7 @@ impl InputHandler {
                     }
                 }
 
-                app.frontend.request_update();
+                app.frontend.request_update(UiUpdate::Settings);
             }
             AppCmd::BindCombo(bind_cmd) => {
                 let buttons = (
@@ -473,7 +482,7 @@ impl InputHandler {
                 let combos = &mut app.config.input.bindings.gamepad.combo;
                 combos.clear_cmd(&pressed);
                 combos.add_cmd(first, second, pressed);
-                app.frontend.request_update();
+                app.frontend.request_update(UiUpdate::Settings);
             }
             AppCmd::ToggleDebug => {
                 #[cfg(feature = "debug")]

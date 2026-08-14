@@ -63,6 +63,21 @@ pub struct FrontendCtx<'a, FS: PlatformFileSystem> {
     pub palettes: &'a [LcdPalette],
 }
 
+/// What moved under the UI, so a frontend rebuilds only the views reading it —
+/// the whole set costs a directory walk and a decode per cover.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum UiUpdate {
+    /// Which carts are shelved, their names, their covers.
+    Library,
+    /// Any config value, the pending rebind included.
+    Settings,
+    States,
+    /// Lines drawn over the picture, which no view is built from.
+    Overlay,
+    /// The menu is coming up: anything under it may have moved.
+    All,
+}
+
 /// What a storage walk is for. Defined here as well as in `ui` for the same reason
 /// as [`NavAction`]: this seam must stay free of any UI toolkit. Not `Copy` — a
 /// cover walk carries the cart it is for.
@@ -95,7 +110,17 @@ pub trait Frontend {
     fn capture_bind<I: BindableInput>(&mut self, input: I, pressed: bool) -> Capture;
 
     /// Mark the UI dirty — app state it displays changed underneath it.
-    fn request_update(&mut self);
+    fn request_update(&mut self, what: UiUpdate);
+
+    /// Mark the UI as worth drawing again for a reason no other call on this seam
+    /// reports: an input the UI reads by itself — the pointer, the wheel, the window
+    /// — none of which arrive through [`Self::nav`].
+    fn request_render(&mut self);
+
+    /// Whether a menu frame drawn now would differ from the one already on screen.
+    /// The app skips building and presenting the frame when it would not, so an idle
+    /// menu costs a poll and a sleep.
+    fn needs_render(&self) -> bool;
 
     /// Called when the UI opens; `has_game` decides whether it is a pause menu
     /// over a running game or the app's home screen.
@@ -118,6 +143,7 @@ pub trait Frontend {
         ctx: FrontendCtx<'_, FS>,
     );
 
-    /// How long to idle after a frame while the UI is open.
-    fn frame_delay(&self) -> Duration;
+    /// How long a menu frame is given, the idle after it included: the app sleeps
+    /// out whatever the frame itself did not spend.
+    fn frame_period(&self) -> Duration;
 }

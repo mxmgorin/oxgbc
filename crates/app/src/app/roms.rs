@@ -2,7 +2,7 @@
 //! it a cover, and choosing which folder the shelf lists.
 
 use crate::app::App;
-use crate::frontend::Frontend;
+use crate::frontend::{Frontend, UiUpdate};
 use crate::library::cover;
 use crate::library::meta::RomMeta;
 use crate::save::shot;
@@ -29,7 +29,7 @@ where
             return;
         }
 
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::Library);
         let msg = if meta.name.is_empty() {
             format!("Cleared name of {game}")
         } else {
@@ -60,7 +60,7 @@ where
             return;
         }
 
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::Library);
         self.notifications
             .add(format!("Cover set from state {index}"));
     }
@@ -75,7 +75,7 @@ where
         };
 
         // The shelf lists this directory now, so it has to be rebuilt.
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::Library);
         self.notifications.add(format!("Found {count} ROMs"));
     }
 
@@ -90,7 +90,7 @@ where
             return;
         }
 
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::Library);
         self.notifications.add(format!("Cover removed from {game}"));
     }
 
@@ -119,7 +119,7 @@ where
             return;
         }
 
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::Library);
         self.notifications.add(format!("Cover set for {game}"));
     }
 }

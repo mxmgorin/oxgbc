@@ -134,7 +134,10 @@ impl GlBackend {
         }
     }
 
-    pub fn draw_backdrop(&mut self, buffer: &[u8]) {
+    /// Draws the frame the menu sits over. `buffer` is `None` when the textures already
+    /// hold it: the quad still has to be drawn — the colour buffer is cleared every
+    /// frame — but uploading the same pixels again buys nothing.
+    pub fn draw_backdrop(&mut self, buffer: Option<&[u8]>) {
         // Uniforms apply to the bound program, and egui's is still bound after it
         // painted the previous frame.
         unsafe {
@@ -144,7 +147,7 @@ impl GlBackend {
         self.uniform_locations
             .send_frame_blend_mode(ShaderFrameBlendMode::None);
 
-        self.draw_buffer(buffer);
+        self.draw_frame(buffer);
 
         self.uniform_locations
             .send_frame_blend_mode(self.shader_frame_blend_mode);
@@ -186,6 +189,12 @@ impl GlBackend {
     }
 
     pub fn draw_buffer(&mut self, buffer: &[u8]) {
+        self.draw_frame(Some(buffer));
+    }
+
+    /// Draws the frame texture, uploading `buffer` into it first unless the texture
+    /// already holds it.
+    fn draw_frame(&mut self, buffer: Option<&[u8]>) {
         let width = RenderConfig::WIDTH;
         let height = RenderConfig::HEIGHT;
 
@@ -209,25 +218,8 @@ impl GlBackend {
 
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, self.frame_texture_id);
-            gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1); // needed for UNSIGNED_SHORT_5_6_5
 
-            gl::TexSubImage2D(
-                gl::TEXTURE_2D,
-                0,
-                0,
-                0,
-                width as i32,
-                height as i32,
-                gl::RGB,
-                gl::UNSIGNED_SHORT_5_6_5,
-                buffer.as_ptr() as *const _,
-            );
-
-            if self.shader_frame_blend_mode != ShaderFrameBlendMode::None {
-                self.uniform_locations.send_prev_image();
-
-                gl::ActiveTexture(gl::TEXTURE1);
-                gl::BindTexture(gl::TEXTURE_2D, self.prev_frame_texture_id);
+            if let Some(buffer) = buffer {
                 gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1); // needed for UNSIGNED_SHORT_5_6_5
 
                 gl::TexSubImage2D(
@@ -239,15 +231,38 @@ impl GlBackend {
                     height as i32,
                     gl::RGB,
                     gl::UNSIGNED_SHORT_5_6_5,
-                    self.prev_buffer.as_ptr() as *const _,
+                    buffer.as_ptr() as *const _,
                 );
+            }
 
-                if buffer.len() == self.prev_buffer.len() {
-                    ptr::copy_nonoverlapping(
-                        buffer.as_ptr(),
-                        self.prev_buffer.as_mut_ptr(),
-                        buffer.len(),
+            if self.shader_frame_blend_mode != ShaderFrameBlendMode::None {
+                self.uniform_locations.send_prev_image();
+
+                gl::ActiveTexture(gl::TEXTURE1);
+                gl::BindTexture(gl::TEXTURE_2D, self.prev_frame_texture_id);
+
+                if let Some(buffer) = buffer {
+                    gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1); // needed for UNSIGNED_SHORT_5_6_5
+
+                    gl::TexSubImage2D(
+                        gl::TEXTURE_2D,
+                        0,
+                        0,
+                        0,
+                        width as i32,
+                        height as i32,
+                        gl::RGB,
+                        gl::UNSIGNED_SHORT_5_6_5,
+                        self.prev_buffer.as_ptr() as *const _,
                     );
+
+                    if buffer.len() == self.prev_buffer.len() {
+                        ptr::copy_nonoverlapping(
+                            buffer.as_ptr(),
+                            self.prev_buffer.as_mut_ptr(),
+                            buffer.len(),
+                        );
+                    }
                 }
             }
 

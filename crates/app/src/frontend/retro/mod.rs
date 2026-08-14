@@ -5,7 +5,7 @@
 pub mod menu;
 
 use crate::cmd::AppCmd;
-use crate::frontend::{Capture, Frontend, FrontendCtx, NavAction};
+use crate::frontend::{Capture, Frontend, FrontendCtx, NavAction, UiUpdate};
 use crate::input::bindings::BindableInput;
 use crate::library::RomsState;
 use crate::video::AppVideo;
@@ -15,7 +15,7 @@ use menu::AppMenu;
 use std::time::Duration;
 
 /// The menu redraws only on change, so idling between frames costs nothing.
-const FRAME_DELAY: Duration = Duration::from_millis(30);
+const FRAME_PERIOD: Duration = Duration::from_millis(30);
 
 pub struct RetroFrontend {
     menu: AppMenu,
@@ -71,9 +71,23 @@ impl Frontend for RetroFrontend {
         }
     }
 
+    /// Every screen of it is one buffer of text, so there is nothing to rebuild
+    /// short of all of it — the overlay included, which paints over that buffer.
     #[inline(always)]
-    fn request_update(&mut self) {
+    fn request_update(&mut self, _what: UiUpdate) {
         self.menu.request_update();
+    }
+
+    /// Nothing here reads the pointer or the window: every input this menu acts on is
+    /// handed to it through `nav` or `capture_bind`, which mark it themselves.
+    #[inline(always)]
+    fn request_render(&mut self) {}
+
+    /// Its screen is one buffer of text, so the frame to draw is exactly the one whose
+    /// lines were rebuilt.
+    #[inline(always)]
+    fn needs_render(&self) -> bool {
+        self.menu.needs_update()
     }
 
     /// The text menu always opens at its root, game or not.
@@ -94,14 +108,14 @@ impl Frontend for RetroFrontend {
         let (items, updated) = self.menu.items(ctx.config, ctx.roms);
 
         if updated {
-            video.overlay.fill_menu(fb, items, true, true);
+            video.fill_menu(fb, items, true, true);
         }
 
         video.draw_backdrop(fb);
     }
 
     #[inline(always)]
-    fn frame_delay(&self) -> Duration {
-        FRAME_DELAY
+    fn frame_period(&self) -> Duration {
+        FRAME_PERIOD
     }
 }

@@ -8,12 +8,13 @@ use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::theme::{self, ROW_PAD, WIDTH_SHEET};
 use egui::{Rect, Sense, Ui, Vec2};
+use std::sync::Arc;
 
 /// Read-model the platform fills in; the screen never reaches into app state.
 pub struct LibraryView<'a> {
     pub entries: &'a [RomEntry],
-    /// Bumped every time the platform rebuilds this view, which is the signal to
-    /// throw away textures uploaded from the covers it replaced.
+    /// Bumped when a position takes a different cover, which is the signal to throw
+    /// away the textures uploaded from the ones it replaced.
     pub version: u64,
     /// The order the entries are already in, which the sort sheet opens on.
     pub sort: SortBy,
@@ -22,8 +23,9 @@ pub struct LibraryView<'a> {
 pub struct RomEntry {
     pub title: String,
     pub kind: CartKind,
-    /// Cover art for the cart's label, when the game has any.
-    pub cover: Option<RgbImage>,
+    /// Cover art for the cart's label, when the game has any. Shared, so a rebuilt
+    /// shelf holds the pixels the platform already had rather than a copy.
+    pub cover: Option<Arc<RgbImage>>,
 }
 
 /// What the cart's own sheet offers. Playing it is Confirm on the shelf, so it is
@@ -309,14 +311,31 @@ pub fn library(
             return;
         }
 
-        egui::ScrollArea::vertical().show(ui, |ui| shelf(ui, view, focus, covers, out));
+        egui::ScrollArea::vertical().show_viewport(ui, |ui, viewport| {
+            shelf(ui, viewport, view, focus, covers, out)
+        });
     });
 
     event
 }
 
+/// The rows a viewport shows, with one of slack past its bottom edge — a row half in
+/// view is a row to build. `pitch` is what one row and its gap take.
+fn rows_in_view(viewport: Rect, pitch: f32, rows: usize) -> std::ops::Range<usize> {
+    let last = ((viewport.max.y / pitch).ceil() as usize + 1).min(rows);
+    // A viewport left below a shelf that has since grown shorter would otherwise
+    // start past its end.
+    let first = ((viewport.min.y / pitch).floor().max(0.0) as usize).min(last);
+
+    first..last
+}
+
+/// Only the rows the viewport shows are built: a shelf walked whole costs its shape
+/// building, its galleys and — the part that outlives the frame — a texture upload
+/// per cover, for every cart in the library at once.
 fn shelf(
     ui: &mut Ui,
+    viewport: Rect,
     view: &LibraryView,
     focus: &mut LibraryFocus,
     covers: &mut TextureCache,
@@ -344,47 +363,108 @@ fn shelf(
     focus.sync(view.entries.len(), columns);
     let on_shelf = !focus.on_header;
 
-    for (row, entries) in view.entries.chunks(columns).enumerate() {
-        ui.horizontal(|ui| {
-            ui.add_space(leading);
-            ui.spacing_mut().item_spacing.x = gap;
+    // What a row and its trailing gap took when every one of them was laid out in
+    // turn: the spacing egui puts between items lands twice over, once after the row
+    // and once after the gap.
+    let pitch = cell.y + MIN_GAP + 2.0 * ui.spacing().item_spacing.y;
+    let rows = view.entries.len().div_ceil(columns);
+    // The whole shelf's height, so the scrollbar spans the library rather than the
+    // few rows actually built.
+    ui.set_height(pitch * rows as f32);
+    let top = ui.max_rect().top();
+    let built_rows = rows_in_view(viewport, pitch, rows);
+    let (first, last) = (built_rows.start, built_rows.end);
 
-            for (column, entry) in entries.iter().enumerate() {
-                let index = row * columns + column;
-                let (rect, response) = ui.allocate_exact_size(cell, Sense::click());
-                let focused = on_shelf && focus.shelf.is_focused(index);
-
-                // Pointer and directional input drive the same highlight, so the
-                // two never disagree about what is selected.
-                if response.hovered() {
-                    focus.point_at_shelf(index);
-                }
-
-                if response.clicked() {
-                    out.push(UiCmd::LaunchRom(index));
-                }
-
-                // Directional input can walk the highlight off-screen; bring it back.
-                if focused && follow_focus {
-                    ui.scroll_to_rect(rect, None);
-                }
-
-                let size = if focused { tile * FOCUS_SCALE } else { tile };
-                let cart = Rect::from_center_size(rect.center(), size);
-                let cover = entry
-                    .cover
-                    .as_ref()
-                    .map(|cover| covers.texture(ui, index, cover).clone());
-                cart::paint(ui, cart, &entry.title, entry.kind, focused, cover.as_ref());
-            }
-        });
-        ui.add_space(MIN_GAP);
+    // Directional input can walk the focus onto a row that was never built and so has
+    // no rect of its own to scroll to. Its band is enough — the shelf only scrolls
+    // vertically, and the band is where the cart would be.
+    if follow_focus {
+        let row = focus.shelf.index() / columns;
+        let band = Rect::from_min_size(
+            egui::pos2(ui.max_rect().left(), top + row as f32 * pitch),
+            cell,
+        );
+        ui.scroll_to_rect(band, None);
     }
+
+    let built = Rect::from_x_y_ranges(
+        ui.max_rect().x_range(),
+        top + first as f32 * pitch..=top + last as f32 * pitch,
+    );
+
+    ui.scope_builder(egui::UiBuilder::new().max_rect(built), |ui| {
+        // Each cart is a widget of its own, so the ids of the built rows are the ones
+        // they would have had with the whole shelf ahead of them.
+        ui.skip_ahead_auto_ids(first * columns);
+
+        for row in first..last {
+            let entries =
+                &view.entries[row * columns..((row + 1) * columns).min(view.entries.len())];
+
+            ui.horizontal(|ui| {
+                ui.add_space(leading);
+                ui.spacing_mut().item_spacing.x = gap;
+
+                for (column, entry) in entries.iter().enumerate() {
+                    let index = row * columns + column;
+                    let (rect, response) = ui.allocate_exact_size(cell, Sense::click());
+                    let focused = on_shelf && focus.shelf.is_focused(index);
+
+                    // Pointer and directional input drive the same highlight, so the
+                    // two never disagree about what is selected.
+                    if response.hovered() {
+                        focus.point_at_shelf(index);
+                    }
+
+                    if response.clicked() {
+                        out.push(UiCmd::LaunchRom(index));
+                    }
+
+                    let size = if focused { tile * FOCUS_SCALE } else { tile };
+                    let cart = Rect::from_center_size(rect.center(), size);
+                    let cover = entry
+                        .cover
+                        .as_ref()
+                        .map(|cover| covers.texture(ui, index, cover).clone());
+                    cart::paint(ui, cart, &entry.title, entry.kind, focused, cover.as_ref());
+                }
+            });
+            ui.add_space(MIN_GAP);
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A viewport two rows tall, `from` rows down a shelf of rows one unit high.
+    fn viewport(from: f32) -> Rect {
+        Rect::from_min_size(egui::pos2(0.0, from), Vec2::new(100.0, 2.0))
+    }
+
+    #[test]
+    fn the_rows_in_view_are_built_with_one_to_spare() {
+        assert_eq!(rows_in_view(viewport(0.0), 1.0, 10), 0..3);
+        assert_eq!(rows_in_view(viewport(4.5), 1.0, 10), 4..8);
+    }
+
+    /// The last row is the last one there is, however far the viewport reaches past it.
+    #[test]
+    fn the_shelf_never_builds_a_row_it_does_not_have() {
+        assert_eq!(rows_in_view(viewport(8.0), 1.0, 10), 8..10);
+        assert_eq!(rows_in_view(viewport(0.0), 1.0, 2), 0..2);
+    }
+
+    /// A shelf that has just grown shorter — a game removed, the window widened —
+    /// leaves the viewport past its end until egui clamps the offset.
+    #[test]
+    fn a_viewport_past_the_end_builds_nothing_out_of_range() {
+        let built = rows_in_view(viewport(40.0), 1.0, 10);
+
+        assert!(built.start <= built.end, "{built:?} would panic as a range");
+        assert!(built.end <= 10);
+    }
 
     /// Two carts on one row, so Up from either reaches the header.
     fn shelved() -> LibraryFocus {

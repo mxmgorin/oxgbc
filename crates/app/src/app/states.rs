@@ -3,7 +3,7 @@
 
 use crate::app::{App, AppState};
 use crate::config::RenderConfig;
-use crate::frontend::Frontend;
+use crate::frontend::{Frontend, UiUpdate};
 use crate::library::meta::CartId;
 use crate::save::meta::StateMeta;
 use crate::save::{self, shot};
@@ -59,7 +59,7 @@ where
                 }
 
                 // The UI lists the states on disk; one just appeared.
-                self.frontend.request_update();
+                self.frontend.request_update(UiUpdate::States);
                 let msg = format!("Saved save state: {index}");
                 self.notifications.add(msg);
             }
@@ -119,7 +119,7 @@ where
         }
 
         // The UI lists the states on disk; one just went away.
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::States);
         self.notifications
             .add(format!("Deleted save state: {index}"));
     }
@@ -140,7 +140,7 @@ where
             return;
         }
 
-        self.frontend.request_update();
+        self.frontend.request_update(UiUpdate::States);
         let msg = if meta.name.is_empty() {
             format!("Cleared name of save state: {index}")
         } else {

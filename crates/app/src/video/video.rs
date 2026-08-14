@@ -6,6 +6,7 @@ use crate::video::sdl2_backend::Sdl2Backend;
 #[cfg(feature = "frontend-modern")]
 use crate::video::DrawUi;
 use crate::video::{calc_win_height, calc_win_width, new_scaled_rect, VideoBackend};
+use core::ppu::framebuffer::FrameBuffer;
 use core::ppu::tile::PixelColor;
 use core::ppu::tile::TileData;
 use sdl2::Sdl;
@@ -16,8 +17,15 @@ pub struct AppVideo {
     backend: VideoBackend,
     config: VideoConfig,
     last_render_time: Instant,
+    /// Whether the backend's frame texture still holds what [`Self::draw_backdrop`]
+    /// would upload. A menu frame draws the same paused picture as the one before it,
+    /// so only something writing into the framebuffer — or a backend that rebuilt its
+    /// texture — makes the upload worth doing again.
+    backdrop_uploaded: bool,
     pub min_render_interval: Duration,
-    pub overlay: Overlay,
+    /// Private, so the text it draws into the framebuffer cannot be written behind
+    /// [`Self::backdrop_uploaded`]'s back.
+    overlay: Overlay,
 }
 
 impl AppVideo {
@@ -50,6 +58,7 @@ impl AppVideo {
             config: config.clone(),
             last_render_time: Instant::now(),
             min_render_interval: config.render.calc_min_frame_interval(),
+            backdrop_uploaded: false,
             backend,
             overlay,
         })
@@ -67,6 +76,8 @@ impl AppVideo {
             .set_fullscreen(config.interface.is_fullscreen, config.interface.scale_mode);
         self.backend.update_config(config);
         self.config = config.clone();
+        // Loading a shader makes the frame texture over, so whatever was in it is gone.
+        self.backdrop_changed();
     }
 
     #[inline]
@@ -78,11 +89,53 @@ impl AppVideo {
         };
 
         self.backend.draw_buffer(buffer, &self.config);
+        // What went up is the blended frame, which is not what a backdrop draws.
+        self.backdrop_changed();
+    }
+
+    /// Draws the paused frame the menu sits over, uploading it only when the texture
+    /// does not already hold it.
+    #[inline(always)]
+    pub fn draw_backdrop(&mut self, buffer: &[u8]) {
+        let fresh = (!self.backdrop_uploaded).then_some(buffer);
+        self.backend.draw_backdrop(fresh, &self.config);
+        self.backdrop_uploaded = true;
+    }
+
+    /// The framebuffer was written into, so the texture no longer holds it.
+    #[inline(always)]
+    fn backdrop_changed(&mut self) {
+        self.backdrop_uploaded = false;
+    }
+
+    /// The text menu's screen, which is the whole framebuffer.
+    pub fn fill_menu(&mut self, fb: &mut FrameBuffer, lines: &[&str], center: bool, align: bool) {
+        self.overlay.fill_menu(fb, lines, center, align);
+        self.backdrop_changed();
     }
 
     #[inline(always)]
-    pub fn draw_backdrop(&mut self, buffer: &[u8]) {
-        self.backend.draw_backdrop(buffer, &self.config)
+    pub fn fill_fps(&mut self, fb: &mut FrameBuffer, text: &str) {
+        self.overlay.fill_fps(fb, text);
+        self.backdrop_changed();
+    }
+
+    /// Notification lines, drawn into the frame itself so both frontends get them.
+    /// Nothing is written for none of them — and nothing is erased either, which is
+    /// what leaves a line standing in a frozen frame until one is drawn over it.
+    #[inline(always)]
+    pub fn fill_notif(&mut self, fb: &mut FrameBuffer, lines: &[&str]) {
+        if lines.is_empty() {
+            return;
+        }
+
+        self.overlay.fill_notif(fb, lines);
+        self.backdrop_changed();
+    }
+
+    pub fn set_overlay_colors(&mut self, text_color: PixelColor, bg_color: PixelColor) {
+        self.overlay.text_color = text_color;
+        self.overlay.bg_color = bg_color;
     }
 
     #[inline(always)]

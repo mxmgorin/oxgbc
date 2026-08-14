@@ -259,6 +259,14 @@ impl Menu {
         self.screen == Screen::Splash
     }
 
+    /// On to the shelf, whether the name's time was up or something got past it. The
+    /// wordmark's texture goes with it: a session shows the splash once, and it is the
+    /// only screen that ever draws the asset.
+    fn leave_splash(&mut self) {
+        self.screen = Screen::Library;
+        self.logo.clear();
+    }
+
     /// The cart whose cover is being worked on, so the platform knows whose save
     /// states to look up.
     pub fn open_cover_rom(&self) -> Option<usize> {
@@ -272,7 +280,7 @@ impl Menu {
         match self.screen {
             // Anything at all gets past the name.
             Screen::Splash => {
-                self.screen = Screen::Library;
+                self.leave_splash();
 
                 None
             }
@@ -683,7 +691,7 @@ impl Menu {
                 let started = *self.splash_started.get_or_insert(root.input(|i| i.time));
 
                 if splash::show(root, views.logo, &mut self.logo, started) {
-                    self.screen = Screen::Library;
+                    self.leave_splash();
                 }
             }
             Screen::Library => {
