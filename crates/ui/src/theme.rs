@@ -289,7 +289,7 @@ fn paint_grain(ui: &Ui, rect: Rect) {
 /// The letters keep the full text colour: engraving them would mean cutting cream
 /// into the surface, which lands near 1.1:1 and cannot be read. What carries the
 /// material is the band, not the text in it.
-pub fn heading(ui: &mut Ui, text: impl ToString) {
+pub fn heading(ui: &mut Ui, text: impl Into<String>) {
     let band = heading_band(ui);
     heading_in(ui, band, Align2::CENTER_CENTER, text);
 }
@@ -297,7 +297,7 @@ pub fn heading(ui: &mut Ui, text: impl ToString) {
 /// The title of a band the caller has already cut, for a header sharing one with
 /// buttons on its far end. Returns the width it took, so a header can set something
 /// beside its title.
-pub fn heading_in(ui: &Ui, band: Rect, anchor: Align2, text: impl ToString) -> f32 {
+pub fn heading_in(ui: &Ui, band: Rect, anchor: Align2, text: impl Into<String>) -> f32 {
     let color = ui.visuals().text_color();
 
     heading_at(
@@ -310,19 +310,25 @@ pub fn heading_in(ui: &Ui, band: Rect, anchor: Align2, text: impl ToString) -> f
 }
 
 /// A heading in a colour of the caller's, for one that fades.
-pub fn heading_at(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString, color: Color32) -> f32 {
+pub fn heading_at(
+    ui: &Ui,
+    rect: Rect,
+    anchor: Align2,
+    text: impl Into<String>,
+    color: Color32,
+) -> f32 {
     let font = TextStyle::Heading.resolve(ui.style());
 
     label_with(ui, rect, anchor, text, font, color)
 }
 
 /// Small print in a row's second-line tone, for text set beside a heading.
-pub fn detail(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString) {
+pub fn detail(ui: &Ui, rect: Rect, anchor: Align2, text: impl Into<String>) {
     detail_at(ui, rect, anchor, text, detail_color(ui, 0.0));
 }
 
 /// Small print in a colour of the caller's, for one that fades.
-pub fn detail_at(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString, color: Color32) {
+pub fn detail_at(ui: &Ui, rect: Rect, anchor: Align2, text: impl Into<String>, color: Color32) {
     let font = TextStyle::Small.resolve(ui.style());
 
     label_with(ui, rect, anchor, text, font, color);
@@ -409,7 +415,7 @@ const DETAIL_FADE: f32 = 0.7;
 /// `rect` is the room the text has; `anchor` places it in there and anything longer
 /// is cut with an ellipsis rather than run past the edge. Returns the width it took,
 /// so a row can put a second text beside the first without the two colliding.
-pub fn label(ui: &Ui, rect: Rect, anchor: Align2, text: impl ToString, color: Color32) -> f32 {
+pub fn label(ui: &Ui, rect: Rect, anchor: Align2, text: impl Into<String>, color: Color32) -> f32 {
     let font = TextStyle::Body.resolve(ui.style());
 
     label_with(ui, rect, anchor, text, font, color)
@@ -419,11 +425,11 @@ fn label_with(
     ui: &Ui,
     rect: Rect,
     anchor: Align2,
-    text: impl ToString,
+    text: impl Into<String>,
     font: FontId,
     color: Color32,
 ) -> f32 {
-    let mut job = LayoutJob::simple_singleline(text.to_string(), font, Color32::PLACEHOLDER);
+    let mut job = LayoutJob::simple_singleline(text.into(), font, Color32::PLACEHOLDER);
     job.wrap = TextWrapping {
         max_width: rect.width(),
         max_rows: 1,
