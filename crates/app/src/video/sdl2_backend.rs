@@ -97,12 +97,18 @@ impl Sdl2Backend {
         self.filters.apply(&mut self.canvas, &config.render.sdl2);
     }
 
-    pub fn draw_backdrop(&mut self, buffer: &[u8], config: &VideoConfig) {
+    /// Draws the frame the menu sits over. `buffer` is `None` when the texture already
+    /// holds it: the picture still has to be drawn — the canvas is cleared every frame —
+    /// but uploading the same pixels again buys nothing.
+    pub fn draw_backdrop(&mut self, buffer: Option<&[u8]>, config: &VideoConfig) {
         self.clear();
 
-        self.game_texture
-            .update(None, buffer, core::ppu::PPU_PITCH)
-            .unwrap();
+        if let Some(buffer) = buffer {
+            self.game_texture
+                .update(None, buffer, core::ppu::PPU_PITCH)
+                .unwrap();
+        }
+
         self.canvas
             .copy(&self.game_texture, None, Some(self.game_rect))
             .unwrap();

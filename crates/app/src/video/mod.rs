@@ -178,7 +178,7 @@ impl VideoBackend {
     }
 
     #[inline]
-    pub fn draw_backdrop(&mut self, buffer: &[u8], config: &VideoConfig) {
+    pub fn draw_backdrop(&mut self, buffer: Option<&[u8]>, config: &VideoConfig) {
         match self {
             VideoBackend::Sdl2(x) => x.draw_backdrop(buffer, config),
             VideoBackend::Gl(x) => x.draw_backdrop(buffer),

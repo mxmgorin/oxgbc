@@ -48,7 +48,7 @@ where
         if let Some(new_fps) = fps {
             self.fps_str.clear();
             write!(&mut self.fps_str, "{new_fps:.2}").unwrap();
-            self.video.overlay.fill_fps(fb, &self.fps_str);
+            self.video.fill_fps(fb, &self.fps_str);
         }
 
         self.video.draw_buffer(fb);
@@ -100,7 +100,7 @@ where
     #[inline(always)]
     pub fn update_notif(&mut self, fb: &mut FrameBuffer) {
         let (lines, updated) = self.notifications.update_and_get();
-        self.video.overlay.fill_notif(fb, lines);
+        self.video.fill_notif(fb, lines);
 
         if updated {
             self.frontend.request_update(UiUpdate::Overlay);

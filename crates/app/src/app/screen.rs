@@ -73,8 +73,7 @@ where
     pub fn update_palette(&mut self, emu: &mut Emu) {
         let palette = &self.palettes[self.config.video.interface.selected_palette_idx];
         let colors = self.config.video.interface.palette_colors(&self.palettes);
-        self.video.overlay.text_color = colors[0];
-        self.video.overlay.bg_color = colors[3];
+        self.video.set_overlay_colors(colors[0], colors[3]);
         self.apply_dmg_palette(emu, colors);
         self.frontend.request_update(UiUpdate::Settings);
 
