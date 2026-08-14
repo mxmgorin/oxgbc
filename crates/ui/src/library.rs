@@ -1,15 +1,15 @@
-//! The library screen: the game collection as a shelf of cartridges or as a list of
-//! rows, and what can be done with one game besides playing it.
+//! The library screen: the game collection as a shelf, a list or a carousel, and what
+//! can be done with one game besides playing it.
 //!
-//! Both layouts are the same library under one focus model and one texture cache;
-//! which of the two is drawn is a setting the platform keeps.
+//! All three share one focus model and one texture cache; which is drawn is a setting
+//! the platform keeps.
 
 use crate::cart::{self, CartKind};
 use crate::image::{RgbImage, TextureCache};
 use crate::menu::UiCmd;
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
-use crate::theme::{self, ROW_GAP, ROW_PAD, THUMB_PAD, THUMB_ROW_HEIGHT, WIDTH_SHEET};
+use crate::theme::{self, ROW_GAP, ROW_HEIGHT, ROW_PAD, THUMB_PAD, THUMB_ROW_HEIGHT, WIDTH_SHEET};
 use egui::{Align2, Rect, Sense, Ui, Vec2};
 use std::sync::Arc;
 
@@ -21,8 +21,7 @@ pub struct LibraryView<'a> {
     pub version: u64,
     /// The order the entries are already in, which the sort sheet opens on.
     pub sort: SortBy,
-    /// How the entries are laid out, which is also what the header's button offers
-    /// to switch away from.
+    /// How the entries are laid out; the header's button offers the next one.
     pub layout: LibraryLayout,
 }
 
@@ -32,23 +31,35 @@ pub struct RomEntry {
     /// Cover art for the cart's label, when the game has any. Shared, so a rebuilt
     /// shelf holds the pixels the platform already had rather than a copy.
     pub cover: Option<Arc<RgbImage>>,
-    /// Platform-formatted play time behind the game, e.g. `"2 h 14 min played"`;
-    /// empty until there is a minute of it. Shown by the list, which has a column
-    /// to spare — a cart has nowhere to put it.
+    /// Platform-formatted play time, e.g. `"2 h 14 min played"`; empty until there is a
+    /// minute of it. Only the list and the carousel have room to show it.
     pub played: String,
 }
 
-/// The two ways the library reads. Mirrored on the platform side, which is what
-/// persists the choice; this crate only names them and asks for the switch.
+/// The ways the library reads, in the order the header's button walks them. Mirrored on
+/// the platform side, which persists the choice.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub enum LibraryLayout {
     /// Cartridges as tiles, as many across as the window fits.
     #[default]
     Shelf,
-    /// One game per row, its cart shrunk to a thumbnail beside the title. Fits far
-    /// more games on screen, and is the only layout that has room for a second
-    /// column of words.
+    /// One game per row, its cart beside the title. Fits the most games on screen.
     List,
+    /// One cart in front, its neighbours standing back on either side. Fits the fewest
+    /// and shows the most of each.
+    Carousel,
+}
+
+impl LibraryLayout {
+    /// The next one round. The order lives here, not on the platform, so the layout the
+    /// button shows is the one it asks for.
+    pub fn next(self) -> Self {
+        match self {
+            LibraryLayout::Shelf => LibraryLayout::List,
+            LibraryLayout::List => LibraryLayout::Carousel,
+            LibraryLayout::Carousel => LibraryLayout::Shelf,
+        }
+    }
 }
 
 /// What the cart's own sheet offers. Playing it is Confirm on the shelf, so it is
@@ -100,8 +111,8 @@ pub enum LibraryEvent {
     Add,
     /// Open the sheet of orders the shelf can be read in.
     Sort,
-    /// Read the library in the other layout from now on.
-    ToggleLayout,
+    /// Read the library in the next layout from now on.
+    CycleLayout,
     OpenSettings,
 }
 
@@ -110,22 +121,23 @@ pub enum LibraryEvent {
 const HEADER: [LibraryEvent; 4] = [
     LibraryEvent::Add,
     LibraryEvent::Sort,
-    LibraryEvent::ToggleLayout,
+    LibraryEvent::CycleLayout,
     LibraryEvent::OpenSettings,
 ];
 
 /// A button's glyph and the words behind it. Icons alone: a gear and a plus need no
 /// caption, and the words are in the tooltip for whoever has a pointer.
 ///
-/// The layout button shows the layout it switches *to* rather than the one in force —
-/// what the button does is what it says.
-fn header_icon(event: LibraryEvent, layout: LibraryLayout) -> (&'static str, &'static str) {
+/// The layout button shows the layout it switches *to*, not the one in force: what the
+/// button does is what it says.
+fn header_icon(event: LibraryEvent, next: LibraryLayout) -> (&'static str, &'static str) {
     match event {
         LibraryEvent::Add => ("\u{2795}", "Add games"),
         LibraryEvent::Sort => ("\u{21C5}", "Sort games"),
-        LibraryEvent::ToggleLayout => match layout {
-            LibraryLayout::Shelf => ("\u{25A4}", "List view"),
-            LibraryLayout::List => ("\u{25A6}", "Shelf view"),
+        LibraryEvent::CycleLayout => match next {
+            LibraryLayout::Shelf => ("\u{25A6}", "Shelf view"),
+            LibraryLayout::List => ("\u{25A4}", "List view"),
+            LibraryLayout::Carousel => ("\u{25A3}", "Carousel view"),
         },
         LibraryEvent::OpenSettings => ("\u{2699}", "Settings"),
     }
@@ -332,7 +344,7 @@ pub fn library(
         );
         for (index, asked) in HEADER.iter().enumerate().rev() {
             let focused = focus.on_header && focus.header.is_focused(index);
-            let (glyph, hint) = header_icon(*asked, view.layout);
+            let (glyph, hint) = header_icon(*asked, view.layout.next());
             // Looked up in the monospace family, which starts at Hack: the arrows
             // and the two layout squares live there and nowhere in the proportional
             // chain. The emoji glyphs are in neither font, so they fall through to
@@ -358,9 +370,18 @@ pub fn library(
             return;
         }
 
+        // The carousel holds one screenful and steps through it, so it is the one
+        // layout with nothing to scroll.
+        if view.layout == LibraryLayout::Carousel {
+            carousel(ui, view, focus, covers, out);
+
+            return;
+        }
+
         egui::ScrollArea::vertical().show_viewport(ui, |ui, viewport| match view.layout {
             LibraryLayout::Shelf => shelf(ui, viewport, view, focus, covers, out),
             LibraryLayout::List => list(ui, viewport, view, focus, covers, out),
+            LibraryLayout::Carousel => unreachable!("returned above, it has no scroll"),
         });
     });
 
@@ -482,13 +503,10 @@ fn shelf(
     });
 }
 
-/// How much taller the cart on a list row is than the thumbnail a plain row holds.
-/// The cart is the point of the row — its cover art is what a library is read by — so
-/// it is drawn big enough to see and the row is sized from it, not the other way round.
+/// How much taller a list row's cart is than a plain thumbnail. The cover art is what
+/// the row is read by, so the cart is sized first and the row follows.
 const LIST_CART_SCALE: f32 = 3.0;
-/// The cart, and the row it sets the height of. Inset by [`ROW_PAD`] on every side it
-/// has one — the same as its distance from the row's left edge, so a cart this large
-/// does not read as wedged into its row.
+/// The cart, inset by [`ROW_PAD`] on every side it has one, and the row it fills.
 const LIST_CART_HEIGHT: f32 = (THUMB_ROW_HEIGHT - THUMB_PAD * 2.0) * LIST_CART_SCALE;
 const LIST_ROW_HEIGHT: f32 = LIST_CART_HEIGHT + ROW_PAD * 2.0;
 
@@ -614,6 +632,188 @@ fn cart_rect(row: Rect) -> Rect {
     Rect::from_min_size(min, Vec2::new(height / cart::ASPECT, height))
 }
 
+/// How much of the strip the front cart takes across and down. The smaller of the two
+/// wins, so it keeps its shape in a wide window and in a short one alike.
+const HERO_WIDTH: f32 = 0.26;
+const HERO_HEIGHT: f32 = 0.8;
+/// What a cart behind the front one is scaled to.
+const SIDE_SCALE: f32 = 0.62;
+/// Gap between neighbours, as a fraction of the front cart's width.
+const CAROUSEL_GAP: f32 = 0.12;
+/// How long one step takes to slide.
+const CAROUSEL_SLIDE: f32 = 0.12;
+/// Room under the carts for the name and the line about it.
+const CAROUSEL_CAPTION: f32 = ROW_PAD + ROW_HEIGHT * 2.0;
+
+/// Where the carousel's carts stand.
+#[derive(Clone, Copy)]
+struct Strip {
+    middle: f32,
+    baseline: f32,
+    hero: f32,
+    gap: f32,
+}
+
+impl Strip {
+    /// The cart `at` steps from the front. Fractional, so a strip mid-step has its
+    /// carts between the two sizes and the two places — that is what makes it slide.
+    fn slot(self, at: f32) -> Rect {
+        let step = at.abs();
+        let side = self.hero * SIDE_SCALE;
+        // Where the first cart behind stands, and so how far one step travels.
+        let first = (self.hero + side) * 0.5 + self.gap;
+        let from_middle = if step <= 1.0 {
+            step * first
+        } else {
+            first + (step - 1.0) * (side + self.gap)
+        };
+        let width = self.hero - step.min(1.0) * (self.hero - side);
+        let height = width * cart::ASPECT;
+        let center = self.middle + from_middle * at.signum();
+
+        Rect::from_min_size(
+            egui::pos2(center - width * 0.5, self.baseline - height),
+            Vec2::new(width, height),
+        )
+    }
+
+    /// How many carts stand behind the front one on each side. The last may run off the
+    /// edge: a strip ending in a whole cart reads as the whole library.
+    fn reach(self, half_width: f32) -> usize {
+        let side = self.hero * SIDE_SCALE;
+        let first = (self.hero + side) * 0.5 + self.gap;
+
+        if first > half_width {
+            return 1;
+        }
+
+        2 + ((half_width - first) / (side + self.gap)).floor() as usize
+    }
+}
+
+/// One cart in front, its neighbours standing back on either side, its name underneath.
+/// Draws only what fits, so its cost does not grow with the library.
+fn carousel(
+    ui: &mut Ui,
+    view: &LibraryView,
+    focus: &mut LibraryFocus,
+    covers: &mut TextureCache,
+    out: &mut Vec<UiCmd>,
+) {
+    let len = view.entries.len();
+    // One row as wide as the library: Left and Right step through all of it, Up out of
+    // any cart reaches the header.
+    focus.sync(len, len);
+    let area = ui.available_rect_before_wrap();
+    let room = (area.height() - CAROUSEL_CAPTION).max(0.0);
+    // The front cart's focus ring stands outside it, so the carts take more height than
+    // the carts themselves.
+    let hero = (area.width() * HERO_WIDTH).min(room * HERO_HEIGHT / (cart::ASPECT + RING));
+    // Carts, ring and caption together, centred in what the header left.
+    let block = hero * (cart::ASPECT + RING) + CAROUSEL_CAPTION;
+    let strip = Strip {
+        middle: area.center().x,
+        // One line to stand on, so a smaller cart reads as further back.
+        baseline: area.top() + (area.height() - block) * 0.5 + hero * cart::ASPECT,
+        hero,
+        gap: hero * CAROUSEL_GAP,
+    };
+    let front = focus.games.index();
+    let slide = slide_of(ui, front, len);
+    // Never the same cart twice; a short library leaves the ends empty.
+    let reach = strip
+        .reach(area.width() * 0.5)
+        .min(len.saturating_sub(1) / 2);
+
+    // Furthest back first, so the front cart paints over its neighbours.
+    for step in (1..=reach).rev() {
+        for (index, at) in [
+            ((front + step) % len, step as f32),
+            ((front + len - step) % len, -(step as f32)),
+        ] {
+            carousel_cart(ui, view, index, strip.slot(at - slide), focus, covers, out);
+        }
+    }
+
+    carousel_cart(ui, view, front, strip.slot(-slide), focus, covers, out);
+    // Clear of the front cart's ring, which hangs below the cart itself.
+    caption(ui, view, front, area, strip.baseline + hero * RING);
+}
+
+/// How far the strip still has to travel, in steps; `0.0` once settled. A step that
+/// wraps the library snaps — sliding it would run the strip the long way round.
+fn slide_of(ui: &Ui, front: usize, len: usize) -> f32 {
+    let id = ui.id().with("carousel");
+    let target = front as f32;
+    let slide = ui.ctx().animate_value_with_time(id, target, CAROUSEL_SLIDE) - target;
+
+    if slide.abs() > len as f32 * 0.5 {
+        ui.ctx().animate_value_with_time(id, target, 0.0);
+
+        return 0.0;
+    }
+
+    slide
+}
+
+/// Paints one cart of the strip and takes the click on it.
+fn carousel_cart(
+    ui: &mut Ui,
+    view: &LibraryView,
+    index: usize,
+    rect: Rect,
+    focus: &mut LibraryFocus,
+    covers: &mut TextureCache,
+    out: &mut Vec<UiCmd>,
+) {
+    let entry = &view.entries[index];
+    let front = focus.games.is_focused(index);
+    let response = ui.interact(rect, ui.id().with(("carousel", index)), Sense::click());
+
+    // No hover-follow here: the strip centres on the focus, so a hovered cart would
+    // come forward and put another one under the pointer. A click turns the carousel;
+    // the front cart plays.
+    if response.clicked() {
+        if front {
+            out.push(UiCmd::LaunchRom(index));
+        } else {
+            focus.point_at_game(index);
+        }
+    }
+
+    let cover = entry
+        .cover
+        .as_ref()
+        .map(|cover| covers.texture(ui, index, cover).clone());
+    let ringed = front && !focus.on_header;
+    cart::paint(ui, rect, &entry.title, entry.kind, ringed, cover.as_ref());
+}
+
+/// The front cart's name and what is known about it, under `top`.
+fn caption(ui: &Ui, view: &LibraryView, front: usize, area: Rect, top: f32) {
+    let Some(entry) = view.entries.get(front) else {
+        return;
+    };
+    let line = Rect::from_min_size(
+        egui::pos2(area.left(), top + ROW_PAD),
+        Vec2::new(area.width(), ROW_HEIGHT),
+    );
+    theme::heading_in(ui, line, Align2::CENTER_CENTER, entry.title.as_str());
+
+    // The carousel has no scrollbar to read the place off.
+    let place = format!("{} of {}", front + 1, view.entries.len());
+    let detail = match entry.played.is_empty() {
+        true => place,
+        false => format!("{} · {place}", entry.played),
+    };
+    theme::detail(
+        ui,
+        line.translate(Vec2::new(0.0, ROW_HEIGHT)),
+        Align2::CENTER_CENTER,
+        detail,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,6 +844,57 @@ mod tests {
 
         assert!(built.start <= built.end, "{built:?} would panic as a range");
         assert!(built.end <= 10);
+    }
+
+    /// A strip whose front cart is 100 wide, with a gap of 10.
+    fn strip() -> Strip {
+        Strip {
+            middle: 500.0,
+            baseline: 300.0,
+            hero: 100.0,
+            gap: 10.0,
+        }
+    }
+
+    #[test]
+    fn the_front_cart_stands_in_the_middle_at_full_size() {
+        let front = strip().slot(0.0);
+
+        assert_eq!(front.center().x, 500.0);
+        assert_eq!(front.width(), 100.0);
+        assert_eq!(front.bottom(), 300.0, "standing on the baseline");
+    }
+
+    /// Every cart stands on the same line, whatever it is scaled to.
+    #[test]
+    fn the_ones_behind_are_smaller_and_stand_further_out() {
+        let (left, right) = (strip().slot(-1.0), strip().slot(1.0));
+
+        assert_eq!(right.width(), 100.0 * SIDE_SCALE);
+        assert_eq!(right.bottom(), 300.0);
+        assert_eq!(left.width(), right.width());
+        assert_eq!(500.0 - left.center().x, right.center().x - 500.0);
+        assert!(right.left() > strip().slot(0.0).right(), "carts overlap");
+        assert!(strip().slot(2.0).left() > right.right());
+    }
+
+    /// A step that is part-way through is part-way in both size and place, which is
+    /// what makes it read as a slide.
+    #[test]
+    fn a_cart_mid_step_is_between_the_two() {
+        let half = strip().slot(0.5);
+        let (front, behind) = (strip().slot(0.0), strip().slot(1.0));
+
+        assert!(half.width() < front.width() && half.width() > behind.width());
+        assert!(half.center().x > front.center().x && half.center().x < behind.center().x);
+    }
+
+    #[test]
+    fn a_wider_strip_stands_more_carts_behind() {
+        let narrow = strip().reach(120.0);
+
+        assert!(strip().reach(400.0) > narrow);
+        assert!(narrow >= 1, "one behind each side even when it is clipped");
     }
 
     /// Two carts on one row, so Up from either reaches the header.
@@ -691,7 +942,7 @@ mod tests {
         assert_eq!(focus.nav(NavAction::Right), None);
         assert_eq!(
             focus.nav(NavAction::Confirm),
-            Some(LibraryPick::Header(LibraryEvent::ToggleLayout))
+            Some(LibraryPick::Header(LibraryEvent::CycleLayout))
         );
 
         assert_eq!(focus.nav(NavAction::Right), None);
@@ -701,16 +952,33 @@ mod tests {
         );
     }
 
-    /// The button offers whichever layout is not in force, so its face is the one
-    /// thing on the header that changes.
+    /// The button's face is the layout it leads to, so it must name the next one round
+    /// and never the one on screen.
     #[test]
     fn the_layout_button_shows_the_layout_it_switches_to() {
-        let shelf = header_icon(LibraryEvent::ToggleLayout, LibraryLayout::Shelf);
-        let list = header_icon(LibraryEvent::ToggleLayout, LibraryLayout::List);
+        let mut layout = LibraryLayout::default();
+        let mut seen = Vec::new();
 
-        assert_eq!(shelf.1, "List view");
-        assert_eq!(list.1, "Shelf view");
-        assert_ne!(shelf.0, list.0, "and shows it with its own glyph");
+        for _ in 0..3 {
+            let next = layout.next();
+            assert_ne!(next, layout, "a button that changes nothing");
+            seen.push(header_icon(LibraryEvent::CycleLayout, next));
+            layout = next;
+        }
+
+        assert_eq!(
+            layout,
+            LibraryLayout::default(),
+            "the cycle comes back round"
+        );
+        assert_eq!(
+            seen,
+            vec![
+                ("\u{25A4}", "List view"),
+                ("\u{25A3}", "Carousel view"),
+                ("\u{25A6}", "Shelf view"),
+            ]
+        );
     }
 
     /// Adding a game is the one thing an empty library needs, so it cannot be a

@@ -8,7 +8,9 @@ use crate::browse::BrowseView;
 use crate::browse::{self, BrowsePick};
 use crate::cover::{self, CoverAction, CoverOffer};
 use crate::image::RgbImage;
-use crate::library::{self, library, LibraryEvent, LibraryFocus, LibraryPick, LibraryView, SortBy};
+use crate::library::{
+    self, library, LibraryEvent, LibraryFocus, LibraryLayout, LibraryPick, LibraryView, SortBy,
+};
 use crate::nav::{FocusEvent, GridFocus, NavAction};
 use crate::overlay;
 use crate::rename::{self, RenameEdit, RenameEvent};
@@ -41,9 +43,8 @@ pub enum UiCmd {
     AddRomsDir,
     /// Read the shelf in this order from now on.
     SortLibrary(SortBy),
-    /// Lay the library out the other way from now on. The platform holds the layout,
-    /// so it is the one that knows which way that is.
-    ToggleLibraryLayout,
+    /// Lay the library out this way from now on.
+    SetLibraryLayout(LibraryLayout),
     /// Walk into what the browser's row `0`-based index holds: a folder to open, or
     /// a game to take.
     BrowseEnter(usize),
@@ -490,9 +491,9 @@ impl Menu {
 
                 None
             }
-            // The one header button that asks the platform for something outright:
-            // nothing to pick between, so there is no sheet to open.
-            LibraryEvent::ToggleLayout => Some(UiCmd::ToggleLibraryLayout),
+            // Nothing to pick between, so no sheet: the button names the next layout
+            // and asks for it outright.
+            LibraryEvent::CycleLayout => Some(UiCmd::SetLibraryLayout(views.library.layout.next())),
             // Opened on the order the shelf is already in, so the sheet says which
             // one that is without a mark of its own.
             LibraryEvent::Sort => {
@@ -921,7 +922,7 @@ mod tests {
                 entries: &[],
                 version: 0,
                 sort: SortBy::default(),
-                layout: library::LibraryLayout::default(),
+                layout: LibraryLayout::default(),
             },
             playing: "",
             logo: None,

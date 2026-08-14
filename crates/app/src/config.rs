@@ -40,8 +40,8 @@ pub enum LibrarySort {
     Playtime,
 }
 
-/// How the library screen lays its games out. Mirrored in the `ui` crate, which
-/// draws both; this is the side that keeps the choice between runs.
+/// How the library screen lays its games out. Mirrored in the `ui` crate, which draws
+/// them and owns the order the button walks; this side only keeps the choice.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, Default)]
 pub enum LibraryLayout {
     /// Cartridge tiles across the screen.
@@ -49,16 +49,8 @@ pub enum LibraryLayout {
     Shelf,
     /// One game per row.
     List,
-}
-
-impl LibraryLayout {
-    /// The other one, which is all the library's layout button ever asks for.
-    pub fn flipped(self) -> Self {
-        match self {
-            LibraryLayout::Shelf => LibraryLayout::List,
-            LibraryLayout::List => LibraryLayout::Shelf,
-        }
-    }
+    /// One cart in front, its neighbours standing back on either side.
+    Carousel,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]

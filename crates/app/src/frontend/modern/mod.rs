@@ -516,8 +516,8 @@ impl ModernFrontend {
             ui::UiCmd::SortLibrary(sort) => {
                 AppCmd::ChangeConfig(ChangeConfigCmd::LibrarySort(from_sort(sort)))
             }
-            ui::UiCmd::ToggleLibraryLayout => {
-                AppCmd::ChangeConfig(ChangeConfigCmd::ToggleLibraryLayout)
+            ui::UiCmd::SetLibraryLayout(layout) => {
+                AppCmd::ChangeConfig(ChangeConfigCmd::LibraryLayout(from_layout(layout)))
             }
             ui::UiCmd::BrowseEnter(index) => return self.browse_enter(index),
             ui::UiCmd::BrowseChooseDir => {
@@ -786,12 +786,19 @@ fn into_sort(sort: LibrarySort) -> ui::SortBy {
     }
 }
 
-/// Crosses the seam one way only: the screen needs the layout in force to draw it and
-/// to offer the other one, and asks for the switch as a flip this side carries out.
 fn into_layout(layout: LibraryLayout) -> ui::LibraryLayout {
     match layout {
         LibraryLayout::Shelf => ui::LibraryLayout::Shelf,
         LibraryLayout::List => ui::LibraryLayout::List,
+        LibraryLayout::Carousel => ui::LibraryLayout::Carousel,
+    }
+}
+
+fn from_layout(layout: ui::LibraryLayout) -> LibraryLayout {
+    match layout {
+        ui::LibraryLayout::Shelf => LibraryLayout::Shelf,
+        ui::LibraryLayout::List => LibraryLayout::List,
+        ui::LibraryLayout::Carousel => LibraryLayout::Carousel,
     }
 }
 
