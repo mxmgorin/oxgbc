@@ -42,6 +42,16 @@ re-enable Downloads once the count is higher:
 
 The emulator passes a wide range of community test suites and is continuously validated against them in CI, including [Blargg](https://github.com/retrio/gb-test-roms), [Mooneye](https://github.com/Gekkio/mooneye-test-suite), [SameSuite](https://github.com/liji32/samesuite), [DMG-acid2](https://github.com/mattcurrie/dmg-acid2), [CGB-acid2](https://github.com/mattcurrie/cgb-acid2), [CGB-acid-hell](https://github.com/mattcurrie/cgb-acid-hell), and [Magen](https://github.com/alloncm/MagenTests).
 
+## Screenshots
+
+| Shelf | List | Carousel | Cartridge |
+|:---:|:---:|:---:|:---:|
+| ![The library as a shelf of cartridges, each one drawn from its header and carrying its cover art on the label](media/screenshots/library-shelf.png) | ![The same library as a list: one game per row, its cart beside the title and the play time behind it](media/screenshots/library-list.png) | ![The same library as a carousel: one cart held in front, its neighbours standing back on either side, its name underneath](media/screenshots/library-carousel.png) | ![What one cartridge offers besides playing it — rename and cover — over the dimmed game](media/screenshots/cart-actions.png) |
+
+| Pause | Save states | Settings | Key bindings |
+|:---:|:---:|:---:|:---:|
+| ![The pause overlay, titled by the game it suspended: resume, save states, restart, library, settings and quit](media/screenshots/pause.png) | ![The save-state slots, each with the screen it was saved with and how long ago](media/screenshots/save-states.png) | ![The settings page: palette, video, audio, emulation and input rows with the value each is set to](media/screenshots/settings.png) | ![Every action and the keys it answers to — the d-pad, the buttons, the diagonals and the shortcuts — each one rebindable from here](media/screenshots/key-bindings.png) |
+
 ## Demos
 
 <p align="center">
