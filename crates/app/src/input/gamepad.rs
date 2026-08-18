@@ -116,24 +116,17 @@ pub fn default_buttons() -> InputBindings<Button> {
     bindings.bind_btn(Button::DPadRight, JoypadButton::Right);
     bindings.bind_btn(Button::A, JoypadButton::A);
     bindings.bind_btn(Button::B, JoypadButton::B);
-    bindings.bind_cmd(Button::Y, true, AppCmd::ToggleRewind);
-    bindings.bind_cmd(Button::Y, false, AppCmd::ToggleRewind);
+    // The shoulders run time the way every other pad does: L1 back, R1 forward.
+    bindings.bind_cmd(Button::LeftShoulder, true, AppCmd::ToggleRewind);
+    bindings.bind_cmd(Button::LeftShoulder, false, AppCmd::ToggleRewind);
 
     bindings.bind_cmd(
         Button::X,
         true,
         AppCmd::ChangeConfig(ChangeConfigCmd::NextPalette),
     );
-    bindings.bind_cmd(
-        Button::LeftShoulder,
-        true,
-        AppCmd::ChangeMode(RunMode::Slow),
-    );
-    bindings.bind_cmd(
-        Button::LeftShoulder,
-        false,
-        AppCmd::ChangeMode(RunMode::Normal),
-    );
+    bindings.bind_cmd(Button::Y, true, AppCmd::ChangeMode(RunMode::Slow));
+    bindings.bind_cmd(Button::Y, false, AppCmd::ChangeMode(RunMode::Normal));
     bindings.bind_cmd(
         Button::RightShoulder,
         true,
