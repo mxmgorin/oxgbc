@@ -114,17 +114,17 @@ Every binding is customizable from the in-app settings menu (or by editing
 | A                                | X                        | A                                          |
 | Start                            | Enter or S               | Start                                      |
 | Select                           | Backspace or A           | Select                                     |
-| Rewind (hold)                    | R                        | Y                                          |
+| Rewind (hold)                    | R                        | LB                                         |
 | Turbo mode (hold)                | Tab                      | RB                                         |
-| Slow mode (hold)                 | Space                    | LB                                         |
+| Slow mode (hold)                 | Space                    | Y                                          |
 | Main menu                        | Esc or Q                 | Select + Start or Select + Y               |
 | Screen scale Up and Down         | + (Equals) and - (Minus) |                                            |
 | Fullscreen Toggle                | F11                      |                                            |
 | Mute audio                       | M                        |                                            |
 | Invert palette                   | I                        | Select + X                                 |
 | Next palette                     | P                        | X                                          |
-| Load save state (1–4)            | F1–F4                    | RT or Select + RB                          |
-| Create save state (1–9)          | 1–9                      | LT or Select + LB                          |
+| Load save state (1–4)            | F1–F4                    | Select + LB                                |
+| Create save state (1–9)          | 1–9                      | Select + RB                                |
 | Volume Up and Down               | PageUp and PageDown      | Start + D-pad Up and Start + D-pad Down    |
 | Prev and Next Save State Slot    |                          | Start + D-pad Right and Start + D-pad Left |
 | Prev and Next Shader             | [ and ]                  | Select + B and Select + A                  |
