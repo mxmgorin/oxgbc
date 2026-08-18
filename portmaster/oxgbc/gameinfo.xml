@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gameList>
+  <game>
+    <path>./oxGBC.sh</path>
+    <name>oxGBC</name>
+    <desc>A Game Boy and Game Boy Color emulator written in Rust: sub-instruction CPU timing and a dot-level PPU, validated in CI against Blargg, Mooneye, SameSuite, dmg-acid2, cgb-acid2 and cgb-acid-hell. Gamepad-first UI: a cartridge library with cover art as a shelf, a list or a carousel, save-state slots with previews and play time, rewind, turbo and slow motion, GLSL shaders, colour palettes for mono games, and every button rebindable. Bring your own cartridges.</desc>
+    <genre>other</genre>
+    <developer>mxmgorin</developer>
+    <publisher>mxmgorin</publisher>
+    <image>./oxgbc/screenshot.png</image>
+  </game>
+</gameList>
