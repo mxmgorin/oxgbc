@@ -1,6 +1,7 @@
 name: Linux ARM
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - "main"
@@ -14,104 +15,168 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'release' }}
 
+env:
+  # The oldest userland we target: ArkOS and AmberELEC are glibc 2.28-2.30. zig
+  # supplies stubs for it, so this is the whole floor decision — no archived
+  # distro to build in. Keep in step with tools/arm/glibc-floor.
+  GLIBC_FLOOR: "2.28"
+  ZIG_VERSION: "0.15.2"
+  ZIGBUILD_VERSION: "0.23.0"
+  SDL_VERSION: "2.26.5+dfsg-1"
+
 jobs:
-  build-aarch64:
-    # Native arm64 runner (free for public repos): no cross-compile plumbing,
-    # native codegen, and an older glibc (22.04) so the binary runs on more
-    # devices. Keeps sdl2-bundled so the binary is self-contained (no runtime
-    # SDL2 dependency). file-dialog stays off (it shells out to zenity/kdialog,
-    # absent on handhelds); file-browser is the in-app picker.
-    runs-on: ubuntu-22.04-arm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake zip
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: aarch64
-
-      - name: Build
-        run: |
-          cargo build --release --no-default-features --features "frontend-modern file-browser sdl2-bundled" -p desktop
-
-      - name: Prepare release
-        run: |
-          mkdir -p dist
-          cp target/release/oxgbc dist/
-
-      - name: Zip release
-        run: cd dist && zip -r oxgbc-linux-aarch64.zip .
-
-      - name: Upload artifact
-        if: github.event_name != 'release'
-        uses: actions/upload-artifact@v4
-        with:
-          name: oxgbc-linux-aarch64.zip
-          path: dist/oxgbc-linux-aarch64.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-
-      - name: Upload to GitHub Release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/oxgbc-linux-aarch64.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-
-  build-armv7:
-    # 32-bit ARM has no native runner, so cross-compile on x86_64.
-    runs-on: ubuntu-latest
+  build:
+    # aarch64 is what most handhelds run; armhf is the older RK3326 devices. One
+    # build per arch, shared by every package below, so the binary in the
+    # PortMaster zip is the same file the plain Linux zip ships.
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            libdir: aarch64-linux-gnu
+            deb_arch: arm64
+          - arch: armhf
+            target: armv7-unknown-linux-gnueabihf
+            libdir: arm-linux-gnueabihf
+            deb_arch: armhf
     env:
-      CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
-      CXX_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-g++
-      AR_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-ar
+      TARGET: ${{ matrix.target }}
+      LIBDIR: ${{ matrix.libdir }}
+      DEB_ARCH: ${{ matrix.deb_arch }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cross toolchain
+      - name: Rust toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf zip
-          rustup target add armv7-unknown-linux-gnueabihf
+          set -eux
+          rustup target add "$TARGET"
+          rustc --version
+
+      - name: zig and cargo-zigbuild
+        run: |
+          set -eux
+          curl --retry 5 -fsSL \
+            "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz" \
+            | tar -xJ -C /opt
+          echo "/opt/zig-x86_64-linux-$ZIG_VERSION" >> "$GITHUB_PATH"
+          curl --retry 5 -fsSL \
+            "https://github.com/rust-cross/cargo-zigbuild/releases/download/v$ZIGBUILD_VERSION/cargo-zigbuild-x86_64-unknown-linux-musl.tar.xz" \
+            | sudo tar -xJ -C /usr/local/bin --strip-components=1 \
+              "cargo-zigbuild-x86_64-unknown-linux-musl/cargo-zigbuild"
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          key: armv7
+          key: ${{ matrix.arch }}
+
+      - name: SDL2 for linking
+        run: |
+          set -eux
+          # Only its symbols matter; the device loads its own SDL2, which every CFW
+          # patches for its panel and pad. Ubuntu's is 2.0.20, which predates
+          # SDL_RenderGeometry — what the UI's canvas painter draws through — so
+          # take Debian's.
+          pool=http://deb.debian.org/debian/pool/main/libs/libsdl2
+          mkdir -p /opt/sdl2
+          for pkg in libsdl2-2.0-0 libsdl2-dev; do
+            curl --retry 5 -fsSLO "$pool/${pkg}_${SDL_VERSION}_${DEB_ARCH}.deb"
+            dpkg -x "${pkg}_${SDL_VERSION}_${DEB_ARCH}.deb" /opt/sdl2
+          done
+          ls -l /opt/sdl2/usr/lib/$LIBDIR/libSDL2*
 
       - name: Build
         env:
-          RUSTFLAGS: "-C linker=arm-linux-gnueabihf-gcc"
-          PKG_CONFIG_ALLOW_CROSS: "1"
+          # No linker override: cargo-zigbuild points the linker and cc at zig,
+          # and a -C linker of our own would opt out of it.
+          # --allow-shlib-undefined: this libSDL2 pulls in X11/wayland/alsa/gbm,
+          # which the sysroot lacks and we never call.
+          RUSTFLAGS: "-L /opt/sdl2/usr/lib/${{ matrix.libdir }} -C link-arg=-Wl,--allow-shlib-undefined"
         run: |
-          cargo build --release --no-default-features --features "frontend-modern file-browser sdl2-bundled" \
-            --target=armv7-unknown-linux-gnueabihf -p desktop
+          set -eux
+          # What a handheld build is, shared with tools/arm/build.sh.
+          cargo zigbuild --release --target "$TARGET.$GLIBC_FLOOR" $(cat tools/arm/cargo-args)
 
-      - name: Prepare release
+      - name: Stage binary
         run: |
+          set -eux
           mkdir -p dist
-          cp target/armv7-unknown-linux-gnueabihf/release/oxgbc dist/
+          cp "target/$TARGET/release/oxgbc" dist/
+          ls -la dist/
 
-      - name: Zip release
-        run: cd dist && zip -r oxgbc-linux-armv7.zip .
+      - name: Check the glibc floor
+        run: |
+          set -eux
+          # Above the floor the loader refuses the binary on the device. Fail
+          # here instead of there.
+          newer=$(readelf -V dist/oxgbc | grep -o 'GLIBC_2\.[0-9]*' | sort -uV \
+            | awk -F. -v f="${GLIBC_FLOOR#2.}" '$2 > f' | tr '\n' ' ')
+          if [ -n "$newer" ]; then
+            echo "binary requires $newer; the floor is GLIBC_$GLIBC_FLOOR" >&2
+            exit 1
+          fi
 
-      - name: Upload artifact
-        if: github.event_name != 'release'
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oxgbc-linux-armv7.zip
-          path: dist/oxgbc-linux-armv7.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          name: oxgbc-linux-${{ matrix.arch }}
+          path: dist/oxgbc
+
+      - name: Zip for release
+        if: github.event_name == 'release'
+        run: |
+          set -eux
+          (cd dist && zip "../oxgbc-linux-${{ matrix.arch }}.zip" oxgbc)
 
       - name: Upload to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/oxgbc-linux-armv7.zip
+          files: oxgbc-linux-${{ matrix.arch }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+
+  portmaster:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: oxgbc-linux-aarch64
+          path: bin/aarch64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: oxgbc-linux-armhf
+          path: bin/armhf
+
+      - name: Assemble the port layout
+        # The layout and the zip live in the script, so a change to either is a
+        # change in one place rather than in two. Artifacts travel as zips, which
+        # drop file modes; the script sets them.
+        env:
+          OXGBC_AARCH64: bin/aarch64/oxgbc
+          OXGBC_ARMHF: bin/armhf/oxgbc
+        run: |
+          set -eux
+          tools/package.sh .
+          ls -laR portmaster-dist
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxgbc-portmaster
+          path: portmaster-dist
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            oxgbc-portmaster.zip
+            oxgbc-portmaster.zip.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
