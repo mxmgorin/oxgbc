@@ -71,6 +71,10 @@ impl Frontend for RetroFrontend {
         }
     }
 
+    fn is_capturing(&self) -> bool {
+        self.menu.is_waiting_input()
+    }
+
     /// Every screen of it is one buffer of text, so there is nothing to rebuild
     /// short of all of it — the overlay included, which paints over that buffer.
     #[inline(always)]

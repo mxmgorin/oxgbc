@@ -217,6 +217,10 @@ impl Frontend for ModernFrontend {
         Capture::Took(settings::bind(id, input))
     }
 
+    fn is_capturing(&self) -> bool {
+        self.capturing.row.is_some()
+    }
+
     fn request_update(&mut self, what: UiUpdate) {
         // Even an update no view is built from still has to reach the screen.
         self.unpainted = true;

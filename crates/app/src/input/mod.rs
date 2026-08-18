@@ -5,6 +5,7 @@ pub mod emu;
 pub mod gamepad;
 pub mod handler;
 pub mod keyboard;
+pub mod repeat;
 
 use sdl2::controller::Button;
 

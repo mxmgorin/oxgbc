@@ -6,6 +6,7 @@ use crate::input::bindings::{BindableInput, InputBindings, InputIndex, InputKind
 use crate::input::emu::handle_emu_btn;
 use crate::input::gamepad::GamepadHandler;
 use crate::input::keyboard::handle_key;
+use crate::input::repeat::Repeat;
 use crate::{PlatformFileDialog, PlatformFileSystem};
 use core::emu::state::EmuState;
 use core::emu::Emu;
@@ -13,6 +14,7 @@ use sdl2::controller::{Button, GameController};
 use sdl2::event::Event;
 use sdl2::{EventPump, GameControllerSubsystem, Sdl};
 use std::path::Path;
+use std::time::Instant;
 
 /// Points one input at one action, on whichever device's table it belongs to.
 ///
@@ -48,6 +50,7 @@ pub struct InputHandler {
     game_controllers: Vec<GameController>,
     game_controller_subsystem: GameControllerSubsystem,
     gamepad_handler: GamepadHandler,
+    repeat: Repeat,
 }
 
 impl InputHandler {
@@ -67,6 +70,7 @@ impl InputHandler {
             game_controllers,
             game_controller_subsystem,
             gamepad_handler: GamepadHandler::new(),
+            repeat: Repeat::default(),
         })
     }
 
@@ -199,6 +203,44 @@ impl InputHandler {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Steps the direction the pad is holding. Only a menu takes it: a game reads the
+    /// button itself and wants nothing from a timer. Called once a frame, so its rate
+    /// is the menu's poll — capped at 30 ms for this.
+    pub fn handle_repeat<FS, FD>(&mut self, app: &mut App<FS, FD>, emu: &mut Emu)
+    where
+        FS: PlatformFileSystem,
+        FD: PlatformFileDialog,
+    {
+        // A rebind row waits for the very button this would send, and a modifier makes
+        // the direction half of a combo.
+        let steps = app.state == AppState::Paused
+            && !app.frontend.is_capturing()
+            && !self.gamepad_handler.held_modifier();
+
+        let Some(button) = self.gamepad_handler.held_direction().filter(|_| steps) else {
+            self.repeat.clear();
+
+            return;
+        };
+
+        if !self.repeat.stepped(button, Instant::now()) {
+            return;
+        }
+
+        let cmd = app
+            .config
+            .input
+            .bindings
+            .gamepad
+            .buttons
+            .cmd(button, true)
+            .cloned();
+
+        if let Some(cmd) = cmd {
+            self.handle_cmd(app, emu, cmd);
         }
     }
 

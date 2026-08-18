@@ -14,6 +14,8 @@ and this project adheres to a simple incrementing release number.
 - `OXGBC_ROMS_DIR` names the folder a fresh install shelves and browses first.
 - **Select + Y opens the menu** as well as Select + Start, which a handheld never
   sees — there it closes whatever is running.
+- A direction held on the pad repeats in the menus, as one held on the keyboard
+  always has: a shelf of a hundred carts no longer takes a hundred presses.
 
 ### Fixed
 - A shader the device cannot compile falls back to Passthrough instead of taking

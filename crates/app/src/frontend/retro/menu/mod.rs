@@ -37,6 +37,14 @@ impl AppMenu {
         }
     }
 
+    /// Its bind screen is a menu item like any other: the selected one waiting.
+    pub fn is_waiting_input(&self) -> bool {
+        matches!(
+            self.items.get(self.selected_index),
+            Some(AppMenuItem::WaitInput(_))
+        )
+    }
+
     pub fn handle_input<I: BindableInput>(&mut self, input: I, pressed: bool) -> Option<AppCmd> {
         let item = self.items.get(self.selected_index).unwrap();
 

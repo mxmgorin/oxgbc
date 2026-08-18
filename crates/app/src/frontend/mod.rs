@@ -109,6 +109,10 @@ pub trait Frontend {
     /// Offer a raw input to the rebinding flow before it reaches the emulator.
     fn capture_bind<I: BindableInput>(&mut self, input: I, pressed: bool) -> Capture;
 
+    /// Whether that flow is waiting for an input. Nothing may be synthesized while it
+    /// is: a repeat of the held direction would bind itself to the row.
+    fn is_capturing(&self) -> bool;
+
     /// Mark the UI dirty — app state it displays changed underneath it.
     fn request_update(&mut self, what: UiUpdate);
 

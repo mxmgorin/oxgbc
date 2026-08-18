@@ -148,6 +148,7 @@ where
 
             tick = now;
             input.handle_events(self, emu);
+            input.handle_repeat(self, emu);
 
             match self.state {
                 AppState::Quitting => break,
