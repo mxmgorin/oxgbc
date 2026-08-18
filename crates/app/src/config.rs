@@ -4,7 +4,7 @@ use crate::video::frame_blend::FrameBlendMode;
 use crate::video::palette::LcdPalette;
 use crate::video::shader::{ShaderFrameBlendMode, ShaderPrecision};
 use core::apu::apu::ApuConfig;
-use core::emu::config::{EmuConfig, GbModel};
+use core::emu::config::EmuConfig;
 use core::ppu::tile::PixelColor;
 use core::ppu::LCD_X_RES;
 use core::ppu::LCD_Y_RES;
@@ -301,11 +301,10 @@ impl Default for AppConfig {
             auto_save_state: false,
             current_save_slot: 0,
             current_load_slot: 0,
-            // Default to CGB so DMG games are colorized out of the box, like a
-            // real Game Boy Color. DMG-only carts still render on the DMG-compat
-            // path (see App::apply_dmg_palette); users can pick DMG for mono.
+            // Auto: a cart runs as the machine its header names. Forcing CGB instead
+            // colorizes DMG games, which is a setting rather than a default.
             emulation: EmuConfig {
-                model: Some(GbModel::Cgb),
+                model: None,
                 ..Default::default()
             },
             audio: AudioConfig {
@@ -324,7 +323,9 @@ impl Default for AppConfig {
                 interface: InterfaceConfig {
                     selected_palette_idx: 0,
                     scale: 5.0,
-                    scale_mode: ScaleMode::Fit,
+                    // Whole pixels: a fractional stretch gives rows of uneven
+                    // thickness, which is what Fit does on a handheld's 640x480.
+                    scale_mode: ScaleMode::Integer,
                     is_fullscreen: true,
                     show_fps: false,
                     show_tiles: false,
@@ -335,15 +336,17 @@ impl Default for AppConfig {
                     frame_blend_mode: FrameBlendMode::None,
                     blend_dim: 1.0,
                     backend: VideoBackendType::Gl,
+                    // The grid is this backend's answer to the shader below: no GL
+                    // to run one, so the pixel edges come from a filter instead.
                     sdl2: Sdl2Config {
-                        grid_enabled: false,
+                        grid_enabled: true,
                         subpixel_enabled: false,
                         dot_matrix_enabled: false,
                         scanline_enabled: false,
                         vignette_enabled: false,
                     },
                     gl: GlConfig {
-                        shader_name: "passthrough".to_string(),
+                        shader_name: "Mono LCD".to_string(),
                         shader_frame_blend_mode: ShaderFrameBlendMode::Simple,
                         shader_precision: ShaderPrecision::Auto,
                     },
