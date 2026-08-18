@@ -1,0 +1,47 @@
+{
+    "version": 4,
+    "name": "oxgbc.zip",
+    "items": [
+        "oxGBC.sh",
+        "oxgbc"
+    ],
+    "items_opt": null,
+    "attr": {
+        "title": "oxGBC",
+        "porter": [
+            "mxmgorin"
+        ],
+        "desc": "A Game Boy and Game Boy Color emulator written in Rust: sub-instruction CPU timing and a dot-level PPU, validated in CI against Blargg, Mooneye, SameSuite, dmg-acid2, cgb-acid2 and cgb-acid-hell. Gamepad-first UI: a cartridge library with cover art as a shelf, a list or a carousel, save-state slots with previews and play time, rewind, turbo and slow motion, GLSL shaders, colour palettes for mono games, and every button rebindable. Bring your own cartridges.",
+        "desc_md": null,
+        "inst": "Ready to run. Put .gb or .gbc files (or a zip of one) in your Game Boy folder beside your ROMs: a `gbc`, `gb` or `gameboy` folder is shelved on the first launch, and any other folder can be picked from the in-app browser. Battery saves, save states and settings stay in ports/oxgbc.",
+        "inst_md": null,
+        "genres": [
+            "other"
+        ],
+        "image": {
+            "screenshot": "screenshot.png",
+            "cover": null,
+            "thumbnail": null,
+            "video": null
+        },
+        "rtr": true,
+        "exp": true,
+        "runtime": [],
+        "store": [
+            {
+                "name": "GitHub",
+                "gameurl": "https://github.com/mxmgorin/oxgbc",
+                "developerurl": "https://github.com/mxmgorin"
+            }
+        ],
+        "availability": "free",
+        "reqs": [
+            "!lowres"
+        ],
+        "arch": [
+            "aarch64",
+            "armhf"
+        ],
+        "min_glibc": "2.28"
+    }
+}

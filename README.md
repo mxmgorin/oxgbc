@@ -117,7 +117,7 @@ Every binding is customizable from the in-app settings menu (or by editing
 | Rewind (hold)                    | R                        | Y                                          |
 | Turbo mode (hold)                | Tab                      | RB                                         |
 | Slow mode (hold)                 | Space                    | LB                                         |
-| Main menu                        | Esc or Q                 | Select + Start                             |
+| Main menu                        | Esc or Q                 | Select + Start or Select + Y               |
 | Screen scale Up and Down         | + (Equals) and - (Minus) |                                            |
 | Fullscreen Toggle                | F11                      |                                            |
 | Mute audio                       | M                        |                                            |
@@ -142,6 +142,14 @@ Grab the latest build for your platform — Windows, macOS, Linux (x86-64 and
 ARM for retro handhelds), or Android — from the
 [**Releases**](https://github.com/mxmgorin/oxgbc/releases/latest) page, or
 [**play online**](https://mxmgorin.github.io/oxgbc/) with nothing to install.
+
+### Retro handhelds
+
+`oxgbc-portmaster.zip` is a [PortMaster](https://portmaster.games) port for the
+Linux handhelds (aarch64 and armhf, glibc 2.28 and up): unzip it into `ports/`
+on the card, and oxGBC appears in the Ports menu. It shelves your `gb`, `gbc` or
+`gameboy` folder on the first launch and keeps its saves and settings in
+`ports/oxgbc`. `make portmaster` builds the same zip locally.
 
 ### macOS first launch
 
