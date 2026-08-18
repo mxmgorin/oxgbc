@@ -14,6 +14,10 @@ use std::ptr;
 #[cfg(feature = "frontend-modern")]
 use std::sync::Arc;
 
+/// The one shader every GL version here compiles. The richer ones use what GLSL ES
+/// 1.00 left out — bitwise operators among them — and a GLES2 device refuses those.
+const FALLBACK_SHADER: &str = "Passthrough";
+
 pub struct GlBackend {
     gl: GLSetup,
     /// The tile viewer's own window, which is not a GL one — it is the same canvas
@@ -65,7 +69,7 @@ impl GlBackend {
             game_rect,
             gl,
         };
-        obj.load_shader(
+        obj.load_shader_or_fallback(
             &render.gl.shader_name,
             render.gl.shader_frame_blend_mode,
             render.gl.shader_precision,
@@ -91,12 +95,14 @@ impl GlBackend {
     }
 
     pub fn update_config(&mut self, config: &VideoConfig) {
-        self.load_shader(
+        if let Err(err) = self.load_shader_or_fallback(
             &config.render.gl.shader_name,
             config.render.gl.shader_frame_blend_mode,
             config.render.gl.shader_precision,
-        )
-        .unwrap();
+        ) {
+            log::error!("Failed to load shader: {err}");
+        }
+
         self.show_tiles(config.interface.show_tiles);
     }
 
@@ -302,6 +308,23 @@ impl GlBackend {
     #[cfg(feature = "frontend-modern")]
     pub fn destroy_ui(&mut self) {
         self.egui.destroy();
+    }
+
+    /// [`Self::load_shader`], falling back rather than failing: the device that
+    /// cannot compile a shader would otherwise take the whole app down with it.
+    fn load_shader_or_fallback(
+        &mut self,
+        name: &str,
+        frame_blend_mode: ShaderFrameBlendMode,
+        precision: ShaderPrecision,
+    ) -> Result<(), String> {
+        if let Err(err) = self.load_shader(name, frame_blend_mode, precision) {
+            log::warn!("Shader {name} unavailable ({err}); using {FALLBACK_SHADER}");
+
+            return self.load_shader(FALLBACK_SHADER, frame_blend_mode, precision);
+        }
+
+        Ok(())
     }
 
     /// Loads and initializes shaders + GPU resources
