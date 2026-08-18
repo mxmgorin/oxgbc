@@ -5,7 +5,7 @@
 //! collection often sits on a read-only or shared disk, and nothing of ours
 //! belongs in it. Keyed by file name, like every other save.
 
-use crate::storage::base_dir;
+use crate::storage::{base_dir, zip};
 use core::cart::header::{CartHeader, CgbFlag};
 use core::cart::Cart;
 use serde::{Deserialize, Serialize};
@@ -121,8 +121,17 @@ impl RomMeta {
 }
 
 fn read_header(path: &Path) -> Option<[u8; CartHeader::END]> {
+    let mut file = File::open(path).ok()?;
+
+    if zip::is_zip(path) {
+        return zip::unzip_rom_prefix(file, CartHeader::END)
+            .ok()?
+            .try_into()
+            .ok();
+    }
+
     let mut header = [0; CartHeader::END];
-    File::open(path).ok()?.read_exact(&mut header).ok()?;
+    file.read_exact(&mut header).ok()?;
 
     Some(header)
 }

@@ -2,6 +2,7 @@ use super::{SubMenu, MAX_MENU_ITEMS_PER_PAGE, MAX_MENU_ITEM_CHARS};
 use crate::cmd::AppCmd;
 use crate::config::AppConfig;
 use crate::storage::browser::{FileBrowser, FILE_BROWSER_BACK_ITEM};
+use crate::storage::ROM_EXTENSIONS;
 use crate::video::truncate_text;
 use std::path::Path;
 
@@ -12,7 +13,7 @@ pub struct FilesMenu {
 
 impl FilesMenu {
     pub fn new(last_path: Option<impl AsRef<Path>>) -> Self {
-        let extensions = &["gb", "gbc"];
+        let extensions = ROM_EXTENSIONS;
 
         Self {
             fb: if let Some(last_path) = last_path {

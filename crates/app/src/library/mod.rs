@@ -4,7 +4,7 @@
 pub mod cover;
 pub mod meta;
 
-use crate::storage::base_dir;
+use crate::storage::{base_dir, is_rom_file};
 use crate::PlatformFileSystem;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ impl RomsState {
         let can_split_paths = filesystem.can_split_paths();
 
         for file in files {
-            if file.ends_with(".gb") || file.ends_with(".gbc") {
+            if is_rom_file(&file) {
                 if can_split_paths {
                     let path = PathBuf::from(file);
                     if let Some(name) = filesystem.file_name(&path) {
