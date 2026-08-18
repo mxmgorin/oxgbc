@@ -197,6 +197,9 @@ impl Default for ButtonComboBindings {
 
         bindings.add_cmd(Button::Start, Button::Back, AppCmd::ToggleMenu);
         bindings.add_cmd(Button::Start, Button::Guide, AppCmd::ToggleMenu);
+        // A handheld never sees Start + Select: there it closes whatever is running.
+        bindings.add_cmd(Button::Back, Button::Y, AppCmd::ToggleMenu);
+        bindings.add_cmd(Button::Guide, Button::Y, AppCmd::ToggleMenu);
 
         bindings.add_cmd(
             Button::Guide,
