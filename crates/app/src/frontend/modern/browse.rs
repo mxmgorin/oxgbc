@@ -4,10 +4,10 @@
 
 use crate::frontend::BrowseTarget;
 use crate::storage::browser::{FileBrowser, FILE_BROWSER_BACK_ITEM};
+use crate::storage::ROM_EXTENSIONS;
 use std::path::{Path, PathBuf};
 
 /// A walk shows only what it can pick: games, or pictures, or nothing but folders.
-const ROM_EXTENSIONS: &[&str] = &["gb", "gbc", "zip"];
 const COVER_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg"];
 const FOLDERS_ONLY: &[&str] = &[];
 /// The walk keeps its own selection for the text menu's paging; the modern screen
