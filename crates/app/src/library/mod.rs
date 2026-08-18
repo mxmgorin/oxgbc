@@ -9,7 +9,12 @@ use crate::PlatformFileSystem;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::path::{Path, PathBuf};
+
+/// The folder a fresh install shelves and browses first: only a launcher knows
+/// where a device keeps its ROMs.
+const ROMS_DIR_ENV: &str = "OXGBC_ROMS_DIR";
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RomsState {
@@ -92,14 +97,9 @@ impl RomsState {
         let path = Self::path();
 
         let mut obj = if path.exists() {
-            let res: Result<RomsState, _> = core::read_json_file(&path);
-            let Ok(lib) = res else {
-                return Default::default();
-            };
-
-            lib
+            core::read_json_file(&path).unwrap_or_else(|_| Self::seeded())
         } else {
-            Default::default()
+            Self::seeded()
         };
 
         // Paths written before they were stored absolute, and any that have since
@@ -118,6 +118,21 @@ impl RomsState {
         }
 
         obj
+    }
+
+    /// A library with nothing on disk behind it: whatever [`ROMS_DIR_ENV`] names, or
+    /// empty. A starting point only — the app keeps what the user picks next.
+    fn seeded() -> Self {
+        let Some(dir) = env::var_os(ROMS_DIR_ENV).filter(|dir| !dir.is_empty()) else {
+            return Default::default();
+        };
+        let dir = PathBuf::from(dir);
+
+        Self {
+            last_browse_dir_path: Some(dir.clone()),
+            selected_dir_path: Some(dir),
+            ..Default::default()
+        }
     }
 
     /// Returns an iterator over the full paths of loaded ROM files.
