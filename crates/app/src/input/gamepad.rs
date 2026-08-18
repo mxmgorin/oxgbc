@@ -55,6 +55,17 @@ impl BindableInput for Button {
     }
 }
 
+const DIRECTIONS: [Button; 4] = [
+    Button::DPadUp,
+    Button::DPadDown,
+    Button::DPadLeft,
+    Button::DPadRight,
+];
+
+/// The buttons a direction pairs with in the combo table, which is what makes a held
+/// direction something other than a direction.
+const MODIFIERS: [Button; 3] = [Button::Back, Button::Guide, Button::Start];
+
 pub struct GamepadHandler {
     combo_handler: ComboHandler,
 }
@@ -64,6 +75,24 @@ impl GamepadHandler {
         Self {
             combo_handler: ComboHandler::new(),
         }
+    }
+
+    /// The direction the pad is holding — the last one pressed while it holds two, or
+    /// a diagonal would walk the focus along both axes at once.
+    pub fn held_direction(&self) -> Option<Button> {
+        DIRECTIONS
+            .iter()
+            .filter_map(|button| Some((self.combo_handler.held_since(*button)?, *button)))
+            .max_by_key(|(since, _)| *since)
+            .map(|(_, button)| button)
+    }
+
+    /// Whether the direction is part of a combo. Those step the save slot and the
+    /// volume, which nothing should do on a timer.
+    pub fn held_modifier(&self) -> bool {
+        MODIFIERS
+            .iter()
+            .any(|button| self.combo_handler.held_since(*button).is_some())
     }
 
     pub fn handle_button(
@@ -139,4 +168,44 @@ pub fn default_buttons() -> InputBindings<Button> {
     );
 
     bindings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_direction_pressed_last_is_the_one_a_repeat_steps() {
+        let config = InputConfig::default();
+        let mut handler = GamepadHandler::new();
+
+        assert_eq!(handler.held_direction(), None);
+
+        handler.handle_button(&config, Button::DPadUp, true);
+        handler.handle_button(&config, Button::DPadRight, true);
+
+        assert_eq!(handler.held_direction(), Some(Button::DPadRight));
+
+        handler.handle_button(&config, Button::DPadRight, false);
+
+        assert_eq!(handler.held_direction(), Some(Button::DPadUp), "still held");
+    }
+
+    /// Select and Start pair with a direction to step the slot and the volume, which
+    /// is why a repeat stays out of it.
+    #[test]
+    fn a_modifier_is_noticed_while_it_is_held() {
+        let config = InputConfig::default();
+        let mut handler = GamepadHandler::new();
+
+        assert!(!handler.held_modifier());
+
+        handler.handle_button(&config, Button::Back, true);
+
+        assert!(handler.held_modifier());
+
+        handler.handle_button(&config, Button::Back, false);
+
+        assert!(!handler.held_modifier());
+    }
 }

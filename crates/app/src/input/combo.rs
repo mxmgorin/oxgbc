@@ -50,6 +50,13 @@ impl ComboHandler {
         Self { states }
     }
 
+    /// When `button` went down, while it is still down.
+    pub fn held_since(&self, button: Button) -> Option<Instant> {
+        let state = self.states[button.code()];
+
+        state.pressed.then_some(state.last_pressed)
+    }
+
     pub fn handle(
         &mut self,
         button: Button,
