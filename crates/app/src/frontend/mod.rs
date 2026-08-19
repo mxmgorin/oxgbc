@@ -37,9 +37,13 @@ pub enum NavAction {
     Right,
     Confirm,
     Back,
-    /// Whatever else can be done with the focused item — the Select button, which
-    /// no menu needs for anything else.
+    /// Whatever else can be done with the focused item — the Start button, which
+    /// A already covers as a confirm.
     Options,
+    /// The settings, from wherever a menu is — the Select button, which no menu
+    /// needs for anything else. Walking a header to them is several presses on a
+    /// device with no pointer.
+    Settings,
 }
 
 /// What the rebinding flow did with a raw input.

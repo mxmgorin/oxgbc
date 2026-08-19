@@ -17,7 +17,7 @@ where
 {
     match btn {
         JoypadButton::Start => return handle_start(pressed, app, emu),
-        JoypadButton::Select => handle_select(pressed, app, emu),
+        JoypadButton::Select => return handle_select(pressed, app, emu),
         JoypadButton::A => return handle_a(pressed, app, emu),
         JoypadButton::B => handle_b(pressed, app, emu),
         JoypadButton::Up => handle_up(pressed, app, emu),
@@ -123,13 +123,15 @@ where
     }
 }
 
+/// Start is the options button while a menu is up: A confirms and B backs out, so
+/// a second confirm is all it would otherwise be.
 pub fn handle_start<FS, FD>(pressed: bool, app: &mut App<FS, FD>, emu: &mut Emu) -> Option<AppCmd>
 where
     FS: PlatformFileSystem,
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        return nav(NavAction::Confirm, app);
+        return nav(NavAction::Options, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.start = pressed;
     }
@@ -137,16 +139,18 @@ where
     None
 }
 
-/// Select is the options button while a menu is up: B already backs out, so
-/// nothing else needs it.
-pub fn handle_select<FS, FD>(pressed: bool, app: &mut App<FS, FD>, emu: &mut Emu)
+/// Select reaches the settings while a menu is up, which are otherwise several
+/// presses of walking a header away.
+pub fn handle_select<FS, FD>(pressed: bool, app: &mut App<FS, FD>, emu: &mut Emu) -> Option<AppCmd>
 where
     FS: PlatformFileSystem,
     FD: PlatformFileDialog,
 {
     if app.state == AppState::Paused && pressed {
-        nav(NavAction::Options, app);
+        return nav(NavAction::Settings, app);
     } else {
         emu.runtime.cpu.clock.bus.io.joypad.select = pressed;
     }
+
+    None
 }

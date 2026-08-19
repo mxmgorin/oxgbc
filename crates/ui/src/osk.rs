@@ -77,6 +77,8 @@ impl Osk {
             NavAction::Back => return Some(OskEvent::Cancel),
             // A typed name is usually right, so taking it needs no walking to.
             NavAction::Options => return Some(OskEvent::Commit),
+            // Nothing here is worth leaving a half-typed name for.
+            NavAction::Settings => return None,
             NavAction::Confirm => return self.press(self.row, self.col),
             NavAction::Left => {
                 self.col = (self.col + row_len(self.row) - 1) % row_len(self.row);

@@ -46,11 +46,14 @@ impl Frontend for RetroFrontend {
             NavAction::Down => self.menu.move_down(),
             NavAction::Left => return self.menu.move_left(ctx.config),
             NavAction::Right => return self.menu.move_right(ctx.config),
-            NavAction::Confirm => return self.menu.select(ctx.config, ctx.fs, ctx.roms),
+            // Every item of a text menu shows its own options in place, so the options
+            // button is another way of picking the item rather than a screen of its own.
+            NavAction::Confirm | NavAction::Options => {
+                return self.menu.select(ctx.config, ctx.fs, ctx.roms)
+            }
             NavAction::Back => self.menu.back(),
-            // Every item of a text menu shows its own options in place; there is
-            // nothing behind one to open.
-            NavAction::Options => {}
+            // This menu's root is the settings; there is nowhere to jump to.
+            NavAction::Settings => {}
         }
 
         None

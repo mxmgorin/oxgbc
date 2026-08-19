@@ -823,6 +823,7 @@ fn into_nav(action: NavAction) -> ui::NavAction {
         NavAction::Confirm => ui::NavAction::Confirm,
         NavAction::Back => ui::NavAction::Back,
         NavAction::Options => ui::NavAction::Options,
+        NavAction::Settings => ui::NavAction::Settings,
     }
 }
 

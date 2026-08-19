@@ -18,6 +18,8 @@ and this project adheres to a simple incrementing release number.
   always has: a shelf of a hundred carts no longer takes a hundred presses.
 
 ### Fixed
+- Back out of the settings returns to the screen they were opened from. Opened from
+  the shelf with a game loaded, it landed on the pause overlay instead.
 - A shader the device cannot compile falls back to Passthrough instead of taking
   the app down with it — GLSL ES 1.00 has no bitwise operators, which several of
   them use.
@@ -30,6 +32,11 @@ and this project adheres to a simple incrementing release number.
 - **New picture defaults**: integer scaling, the Mono LCD shader on the GL backend,
   and the grid filter on the SDL2 one — whole pixels, and pixel edges either way
   the frame is drawn.
+- **Start and Select have menu roles of their own.** Start opens whatever else can be
+  done with the focused item — a cartridge's sheet, a save slot's, the typed name of a
+  rename — and Select reaches the settings from any screen, which took walking the
+  library's header to the gear before. Start used to be a second Confirm, which is
+  also what made the menu hotkey fire the highlighted row on its way through.
 - Rewind moved to L1 and slow motion to Y, so the shoulders run time the way every
   other pad does: L1 back, R1 forward.
 - The emulated model defaults to auto — a cart runs as the machine its header names.
