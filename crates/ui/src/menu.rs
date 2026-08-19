@@ -152,8 +152,13 @@ const PAUSE_ITEMS: [(&str, PauseAction); 6] = [
 #[derive(Default)]
 pub struct Menu {
     screen: Screen,
-    /// Where Back returns to, so settings can be reached from either screen.
+    /// Which of the two home screens the UI came up on, so Back out of the shelf
+    /// knows whether there is a game to return to.
     opener: Screen,
+    /// The screen the settings were opened from, which is where the last Back out of
+    /// them returns to: Select reaches them from anywhere, not only from the two the
+    /// UI comes up on.
+    settings_from: Screen,
     library: LibraryFocus,
     pause: GridFocus,
     settings: GridFocus,
@@ -279,6 +284,12 @@ impl Menu {
     }
 
     pub fn nav(&mut self, action: NavAction, views: &Views<'_>) -> Option<UiCmd> {
+        if action == NavAction::Settings && self.takes_settings() {
+            self.open_settings();
+
+            return None;
+        }
+
         match self.screen {
             // Anything at all gets past the name.
             Screen::Splash => {
@@ -481,7 +492,7 @@ impl Menu {
     fn library_event(&mut self, event: LibraryEvent, views: &Views<'_>) -> Option<UiCmd> {
         match event {
             LibraryEvent::OpenSettings => {
-                self.screen = Screen::Settings(ROOT_PAGE);
+                self.open_settings();
 
                 None
             }
@@ -672,21 +683,38 @@ impl Menu {
         }
     }
 
+    /// Whether the screen would let the settings button through. The name is past by
+    /// anything at all, the settings are already there, and a rename would lose what
+    /// has been typed.
+    fn takes_settings(&self) -> bool {
+        !matches!(
+            self.screen,
+            Screen::Splash | Screen::Settings(_) | Screen::StateRename(_) | Screen::RomRename(_)
+        )
+    }
+
+    /// The settings at their first page, remembering the screen to return to: they
+    /// are reached from anywhere, not only from the two the UI comes up on.
+    fn open_settings(&mut self) {
+        self.settings_from = self.screen;
+        self.screen = Screen::Settings(ROOT_PAGE);
+    }
+
     fn open_settings_page(&mut self, from: PageId, to: PageId) {
         self.settings_trail
             .push((from, std::mem::take(&mut self.settings)));
         self.screen = Screen::Settings(to);
     }
 
-    /// Back to the page this one was opened from, or out of the settings when it
-    /// was opened from another screen.
+    /// Back to the page this one was opened from, or out of the settings to the
+    /// screen they were opened from when there is no page left to pop.
     fn leave_settings_page(&mut self) {
         match self.settings_trail.pop() {
             Some((page, focus)) => {
                 self.settings = focus;
                 self.screen = Screen::Settings(page);
             }
-            None => self.screen = self.opener,
+            None => self.screen = self.settings_from,
         }
     }
 
@@ -821,6 +849,9 @@ impl Menu {
     fn activate_pause(&mut self, index: usize) -> Option<UiCmd> {
         match &PAUSE_ITEMS.get(index)?.1 {
             PauseAction::Cmd(cmd) => return Some(cmd.clone()),
+            // The settings are entered through their own way in, which is what
+            // remembers the screen to return to.
+            PauseAction::Open(Screen::Settings(_)) => self.open_settings(),
             PauseAction::Open(screen) => {
                 self.screen = *screen;
 
@@ -1102,6 +1133,75 @@ mod tests {
         assert_eq!(
             menu.nav(NavAction::Confirm, &views(&view)),
             Some(UiCmd::SortLibrary(SortBy::Name))
+        );
+    }
+
+    /// The shelf with a game running behind it: the case the settings used to come
+    /// back from wrong, since the way out read the screen the UI came up on.
+    fn on_the_shelf_over_a_game(view: &SettingsView) -> Menu {
+        let mut menu = Menu::default();
+        menu.start(true);
+        menu.nav(NavAction::Confirm, &views(view));
+
+        menu
+    }
+
+    #[test]
+    fn the_settings_are_one_press_away_and_come_back_to_the_screen_they_left() {
+        let view = nested();
+        let mut menu = on_the_shelf_over_a_game(&view);
+
+        assert_eq!(menu.nav(NavAction::Settings, &views(&view)), None);
+        assert_eq!(menu.on_settings_page(), Some(ROOT_PAGE));
+        sync_page(&mut menu, &view);
+
+        assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
+        assert_eq!(
+            menu.screen,
+            Screen::Library,
+            "the shelf it was opened from, not the pause overlay behind it"
+        );
+    }
+
+    /// The overlay's own row leads to the same place, and back out of it the same way.
+    #[test]
+    fn the_settings_row_of_the_overlay_comes_back_to_the_overlay() {
+        let view = nested();
+        let mut menu = on_settings(&view);
+        sync_page(&mut menu, &view);
+
+        assert_eq!(menu.nav(NavAction::Back, &views(&view)), None);
+        assert_eq!(menu.screen, Screen::Pause);
+    }
+
+    #[test]
+    fn the_options_button_opens_the_focused_carts_sheet() {
+        let view = nested();
+        let mut menu = on_the_shelf_over_a_game(&view);
+        menu.library.sync(1, 1);
+
+        assert_eq!(menu.nav(NavAction::Options, &views(&view)), None);
+        assert_eq!(menu.screen, Screen::RomActions(0));
+    }
+
+    /// Both buttons are the text field's while a name is being typed: one takes the
+    /// name, and the other would throw away what has been typed so far.
+    #[test]
+    fn a_rename_keeps_both_buttons_to_itself() {
+        let view = nested();
+        let mut menu = on_the_shelf_over_a_game(&view);
+        menu.library.sync(1, 1);
+        menu.nav(NavAction::Options, &views(&view));
+        menu.rom_actions.sync(library::action_count(), 1);
+        menu.nav(NavAction::Confirm, &views(&view));
+        assert_eq!(menu.screen, Screen::RomRename(0), "Rename is the first row");
+
+        assert_eq!(menu.nav(NavAction::Settings, &views(&view)), None);
+        assert_eq!(menu.screen, Screen::RomRename(0));
+        assert_eq!(
+            menu.nav(NavAction::Options, &views(&view)),
+            Some(UiCmd::RenameRom(0, String::new())),
+            "the options button takes the name instead"
         );
     }
 

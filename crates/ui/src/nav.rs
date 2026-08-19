@@ -14,6 +14,9 @@ pub enum NavAction {
     /// Whatever else can be done with the focused item, which is the screen's
     /// business rather than the focus model's.
     Options,
+    /// The settings, from wherever the menu is — the menu's business rather than
+    /// any one screen's.
+    Settings,
 }
 
 /// What a [`NavAction`] meant beyond moving the highlight.
@@ -84,9 +87,9 @@ impl GridFocus {
             return Some(FocusEvent::Back);
         }
 
-        // Options is about the focused item, not about which item that is, so the
-        // screen handles it before ever asking the focus.
-        if action == NavAction::Options {
+        // Neither moves the highlight: one is about the focused item, the other about
+        // the whole menu, so both are handled before the focus is ever asked.
+        if matches!(action, NavAction::Options | NavAction::Settings) {
             return None;
         }
 
@@ -104,7 +107,9 @@ impl GridFocus {
             NavAction::Left => self.index = (self.index + self.len - 1) % self.len,
             NavAction::Down => self.index = self.below(),
             NavAction::Up => self.index = self.above(),
-            NavAction::Back | NavAction::Options => unreachable!("returned above"),
+            NavAction::Back | NavAction::Options | NavAction::Settings => {
+                unreachable!("returned above")
+            }
         }
 
         None

@@ -101,6 +101,10 @@ The emulator passes a wide range of community test suites and is continuously va
 Every binding is customizable from the in-app settings menu (or by editing
 `config.json`), for both keyboard and gamepad.
 
+In the menus the d-pad moves and A confirms, B backs out, **Start** opens whatever
+else can be done with the focused item — a cartridge's sheet, a save slot's — and
+**Select** goes straight to the settings.
+
 <details>
 <summary><b>Default control mappings</b> (click to expand)</summary>
 

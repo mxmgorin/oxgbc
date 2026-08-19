@@ -20,8 +20,8 @@ Battery saves, save states, covers and settings live in `ports/oxgbc`.
 | D-pad            | Move                     | D-pad                       |
 | A                | Confirm                  | A                           |
 | B                | Back                     | B                           |
-| Start            | Confirm                  | Start                       |
-| Select           | Options for the item     | Select                      |
+| Start            | Options for the item     | Start                       |
+| Select           | Settings                 | Select                      |
 | Select + Y       | —                        | Menu                        |
 | L1 / R1 (hold)   | —                        | Rewind / turbo              |
 | Y (hold)         | —                        | Slow motion                 |
