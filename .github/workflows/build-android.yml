@@ -51,9 +51,9 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 33
-          ndk: ${{ env.NDK_VERSION }}
-          cmake: 3.22.1
+          # The default also installs the legacy `tools` package, which current
+          # cmdline-tools no longer provide.
+          packages: platform-tools
 
       - name: Install NDK ${{ env.NDK_VERSION }}
         run: |
