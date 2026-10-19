@@ -4,7 +4,7 @@
 pub mod cover;
 pub mod meta;
 
-use crate::storage::{base_dir, is_rom_file};
+use crate::storage::{base_dir, from_stored, is_rom_file, to_stored};
 use crate::PlatformFileSystem;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
@@ -102,12 +102,15 @@ impl RomsState {
             Self::seeded()
         };
 
+        obj.last_browse_dir_path = obj.last_browse_dir_path.as_deref().map(from_stored);
+        obj.selected_dir_path = obj.selected_dir_path.as_deref().map(from_stored);
         // Paths written before they were stored absolute, and any that have since
         // been reached another way, settle here — otherwise a game keeps a second
         // spelling of itself for good.
         obj.opened_rom_paths = obj
             .opened_rom_paths
             .drain(..)
+            .map(|path| from_stored(&path))
             .map(|path| path.canonicalize().unwrap_or(path))
             .collect();
 
@@ -158,7 +161,14 @@ impl RomsState {
     }
 
     pub fn save_file(&self) {
-        if let Err(err) = core::save_json_file(RomsState::path(), self) {
+        let stored = Self {
+            last_browse_dir_path: self.last_browse_dir_path.as_deref().map(to_stored),
+            selected_dir_path: self.selected_dir_path.as_deref().map(to_stored),
+            opened_rom_paths: self.opened_rom_paths.iter().map(|p| to_stored(p)).collect(),
+            ..self.clone()
+        };
+
+        if let Err(err) = core::save_json_file(RomsState::path(), &stored) {
             log::error!("Failed to save ROMs: {err}");
         }
     }

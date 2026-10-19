@@ -155,6 +155,18 @@ on the card, and oxGBC appears in the Ports menu. It shelves your `gb`, `gbc` or
 `gameboy` folder on the first launch and keeps its saves and settings in
 `ports/oxgbc`. `make portmaster` builds the same zip locally.
 
+### Portable mode
+
+On desktop, settings, saves and the library live in the per-user data directory
+by default. Other locations:
+
+| Location | How |
+| --- | --- |
+| `portable/` beside the app | create the folder next to the executable (next to `oxGBC.app` on macOS, the AppImage on Linux) |
+| any directory | `--data-dir <path>` or `OXGBC_DATA_DIR=<path>` |
+
+In portable mode, the whole folder can be moved, including any games stored inside it.
+
 ### macOS first launch
 
 Because the app is only ad-hoc signed (no paid Apple Developer ID), Gatekeeper

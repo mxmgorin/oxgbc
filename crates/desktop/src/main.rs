@@ -1,3 +1,5 @@
+mod location;
+
 use app::{AppPlatform, PlatformFileSystem};
 use std::path::Path;
 use std::{env, fs};
@@ -8,7 +10,8 @@ fn main() {
         .write_style_or("OXGBC_LOG_STYLE", "always");
     env_logger::init_from_env(env);
     log::info!("Starting desktop app");
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
+    app::storage::init(location::resolve(&mut args));
 
     #[cfg(feature = "file-dialog")]
     let fd = DesktopFileDialog;
