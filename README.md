@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://mxmgorin.github.io/oxgbc/"><b>🕹️&nbsp;&nbsp;Play online</b></a>
+  <a href="https://oxgbc.mxmgorin.dev/"><b>🕹️&nbsp;&nbsp;Play online</b></a>
   &nbsp;&nbsp;&nbsp;
   <a href="https://github.com/mxmgorin/oxgbc/releases/latest"><b>📥&nbsp;&nbsp;Download</b></a>
 </p>
@@ -145,7 +145,7 @@ else can be done with the focused item — a cartridge's sheet, a save slot's �
 Grab the latest build for your platform — Windows, macOS, Linux (x86-64 and
 ARM for retro handhelds), or Android — from the
 [**Releases**](https://github.com/mxmgorin/oxgbc/releases/latest) page, or
-[**play online**](https://mxmgorin.github.io/oxgbc/) with nothing to install.
+[**play online**](https://oxgbc.mxmgorin.dev/) with nothing to install.
 
 ### Retro handhelds
 
